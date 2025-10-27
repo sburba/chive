@@ -76,7 +76,10 @@ impl Hive {
     }
 
     pub fn to_hex_map(&self) -> HashMap<Hex, String> {
-        self.map.iter().map(|(hex, tile)| (*hex, tile.to_string())).collect()
+        self.map
+            .iter()
+            .map(|(hex, tile)| (*hex, tile.to_string()))
+            .collect()
     }
 
     pub fn stack_height(&self, hex: &Hex) -> i32 {
@@ -87,16 +90,33 @@ impl Hive {
         height
     }
 
-    pub fn neighbors(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+    pub fn topmost_occupied_hex(&self, hex: &Hex) -> Option<Hex> {
+        let stack_height = self.stack_height(hex);
+        if stack_height > 0 {
+            Some(Hex {
+                h: stack_height - 1,
+                ..*hex
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn neighbors_at_same_level(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
         neighbors(hex)
     }
 
-    pub fn occupied_neighbors(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+    pub fn occupied_neighbors_at_same_level(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
         neighbors(hex).filter(|h| self.map.contains_key(h))
     }
 
+    pub fn topmost_occupied_neighbors(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+        self.neighbors_at_same_level(hex)
+            .filter_map(|hex| self.topmost_occupied_hex(&hex))
+    }
+
     pub fn unoccupied_neighbors(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
-        neighbors(hex).filter(|h| !self.map.contains_key(h))
+        neighbors(hex).filter(|neighbor| !self.map.contains_key(neighbor))
     }
 
     pub fn is_occupied(&self, hex: &Hex) -> bool {
@@ -114,7 +134,8 @@ impl Hive {
 
 impl Display for Hive {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let hex_map: HashMap<Hex, String> = self.map.iter().map(|(h, t)| (*h, t.to_string())).collect();
+        let hex_map: HashMap<Hex, String> =
+            self.map.iter().map(|(h, t)| (*h, t.to_string())).collect();
         write!(f, "{}", hex_map_to_string(&hex_map))
     }
 }

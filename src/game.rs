@@ -101,7 +101,7 @@ impl Game {
             .map
             .iter()
             .filter(|(hex, t)| {
-                t.bug == Bug::Queen && self.hive.occupied_neighbors(hex).count() == 6
+                t.bug == Bug::Queen && self.hive.occupied_neighbors_at_same_level(hex).count() == 6
             })
             .map(|(_, t)| t.color)
             .collect();
@@ -114,7 +114,7 @@ impl Game {
         }
 
         GameResult::Winner {
-            color: losing_colors.first().unwrap().clone(),
+            color: *losing_colors.first().unwrap(),
         }
     }
 
@@ -126,10 +126,6 @@ impl Game {
     }
 
     pub fn valid_turns(&self) -> Vec<Turn> {
-        //TODO: Bugs:
-        // You can place any piece on a higher level if you have a bug on that level
-        // You can place a piece adjacent to a piece that has an opposing color's beetle on top of it
-        // You can move a piece out from underneath a beetle
         let mut valid_turns: Vec<Turn> = vec![];
         let active_player_reserve = if self.active_player == Color::Black {
             &self.black_reserve
@@ -151,13 +147,15 @@ impl Game {
         if self.active_reserve().contains(&Bug::Queen) {
             return Vec::new();
         }
-        for (hex, tile) in self.hive.map.iter() {
+        let toplevel_pieces = self.hive.map.iter().filter(|(hex, _)| self.hive.stack_height(hex) - 1 == hex.h);
+        for (hex, tile) in toplevel_pieces {
             if tile.color == self.active_player {
                 match tile.bug {
                     Bug::Beetle => {
                         let bottom_level = Hex { h: 0, ..*hex };
                         let allowed_slides = self.allowed_slides(hex, None);
-                        let allowed_mounts = self.hive.occupied_neighbors(&bottom_level);
+                        let allowed_mounts =
+                            self.hive.occupied_neighbors_at_same_level(&bottom_level);
                         let possible_moves =
                             allowed_slides
                                 .chain(allowed_mounts)
@@ -225,6 +223,10 @@ impl Game {
     }
 
     fn valid_placements(&self, active_player_reserve: &Vec<Bug>) -> Vec<Turn> {
+        if active_player_reserve.is_empty() {
+            return vec![];
+        }
+
         if self.hive.map.is_empty() {
             return active_player_reserve
                 .iter()
@@ -266,13 +268,9 @@ impl Game {
 
         for (hex, tile) in self.hive.map.iter() {
             if tile.color == self.active_player {
-                for neighbor in self.hive.unoccupied_neighbors(hex) {
+                for neighbor in self.hive.unoccupied_neighbors(&Hex { h: 0, ..*hex }) {
                     let allowed = *placement_allowed.entry(neighbor).or_insert_with(|| {
                         !self.is_adjacent_to_color(&neighbor, &self.active_player.opposite())
-                            && !self.hive.is_occupied(&Hex {
-                                h: neighbor.h + 1,
-                                ..neighbor
-                            })
                     });
                     if allowed {
                         let turns = reserve.iter().map(|bug| Turn::Placement {
@@ -294,7 +292,7 @@ impl Game {
 
     fn allowed_jumps(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
         let mut allowed_jumps = vec![];
-        let occupied_neighbors = self.hive.occupied_neighbors(hex);
+        let occupied_neighbors = self.hive.occupied_neighbors_at_same_level(hex);
         for neighbor in occupied_neighbors {
             let direction = neighbor - *hex;
             let unoccupied_spot = self.hive.next_unoccupied_spot_in_direction(hex, &direction);
@@ -314,7 +312,7 @@ impl Game {
                 for dest in self.allowed_slides(&hex, Some(start)) {
                     if !self
                         .hive
-                        .occupied_neighbors(&hex)
+                        .occupied_neighbors_at_same_level(&hex)
                         .filter(|neighbor| neighbor != start)
                         .any(|neighbor| is_adjacent(&dest, &neighbor))
                     {
@@ -356,7 +354,11 @@ impl Game {
             current = frontier.pop().unwrap();
             for dest in self.allowed_slides(&current, None) {
                 // If the destination isn't connected to anything, then it's not a valid move
-                if !self.hive.occupied_neighbors(&dest).any(|_| true) {
+                if !self
+                    .hive
+                    .occupied_neighbors_at_same_level(&dest)
+                    .any(|_| true)
+                {
                     continue;
                 }
                 // The ant can only break the hive on its first move as long as it is adjacent to
@@ -378,7 +380,7 @@ impl Game {
         hex: &Hex,
         ignore_hex: Option<&Hex>,
     ) -> impl Iterator<Item = Hex> + use<> {
-        let neighbors: Vec<Hex> = self.hive.neighbors(hex).collect();
+        let neighbors: Vec<Hex> = self.hive.neighbors_at_same_level(hex).collect();
 
         let mut empty_seen = 0;
         let mut allowed_slides: HashSet<Hex> = HashSet::new();
@@ -405,12 +407,14 @@ impl Game {
     }
 
     fn is_adjacent_to_color(&self, hex: &Hex, color: &Color) -> bool {
-        neighbors(hex).any(|adjacent_hex| {
-            self.hive
-                .map
-                .get(&adjacent_hex)
-                .map_or(false, |tile| tile.color == *color)
-        })
+        self.hive
+            .topmost_occupied_neighbors(hex)
+            .any(|adjacent_hex| {
+                self.hive
+                    .map
+                    .get(&adjacent_hex)
+                    .map_or(false, |tile| tile.color == *color)
+            })
     }
 }
 
@@ -421,22 +425,70 @@ mod tests {
     use Turn::Move;
     use Turn::Placement;
 
-    fn moves_to_string(hex_map: &mut HashMap<Hex, String>, moves: Vec<Turn>) -> String {
+    fn turns_to_string(hex_map: &HashMap<Hex, String>, moves: Vec<Turn>) -> String {
+        let mut turns_map = hex_map.clone();
         for mv in moves {
             match mv {
-                Placement { .. } => {
-                    panic!("Placements not allowed")
+                Placement { hex, tile: _ } => {
+                    turns_map.insert(hex, "*".to_owned());
                 }
-                Move { from, to } => {
-                    hex_map.insert(to, "*".to_string());
+                Move { from: _, to } => {
+                    turns_map.insert(to, "*".to_owned());
                 }
             }
         }
-        hex_map_to_string(hex_map)
+        hex_map_to_string(&turns_map)
+    }
+
+    fn assert_placements(placements: &str) {
+        let placements_map = parse_hex_map_string(placements).unwrap();
+        let mut expected_placements: Vec<Turn> = placements_map
+            .iter()
+            .filter(|(_, token)| *token == "*")
+            .map(|(hex, _)| Placement {
+                hex: *hex,
+                tile: Tile {
+                    bug: Bug::Queen,
+                    color: Color::White,
+                },
+            })
+            .collect();
+
+        let hex_map: HashMap<Hex, String> = placements_map
+            .into_iter()
+            .filter(|(_, token)| *token != "*")
+            .collect();
+        let hive = Hive::from_hex_map(&hex_map).unwrap();
+
+        let game = Game {
+            hive,
+            white_reserve: vec![Bug::Queen],
+            black_reserve: vec![],
+            active_player: Color::White,
+        };
+
+        let mut actual_placements: Vec<Turn> = game
+            .valid_turns()
+            .into_iter()
+            .filter(|turn| match turn {
+                Placement { .. } => true,
+                Move { .. } => false,
+            })
+            .collect();
+
+        expected_placements.sort();
+        actual_placements.sort();
+
+        if expected_placements != actual_placements {
+            let actual_placements_map = turns_to_string(&hex_map, actual_placements);
+            let expected_placements_map = turns_to_string(&hex_map, expected_placements);
+
+            pretty_assertions::assert_eq!(expected_placements_map, actual_placements_map);
+        }
     }
 
     fn assert_moves(moves: &str) {
-        let moves_map = parse_hex_map_string(&moves).unwrap();
+        let moves_map = parse_hex_map_string(moves).unwrap();
         let (from, _) = moves_map
             .iter()
             .find(|(_, token)| token.chars().next().unwrap().is_uppercase())
@@ -444,19 +496,14 @@ mod tests {
 
         let mut expected_turns: Vec<Turn> = moves_map
             .iter()
-            .filter_map(|(hex, token)| {
-                if token == "*" {
-                    Some(Move {
-                        from: *from,
-                        to: *hex,
-                    })
-                } else {
-                    None
-                }
+            .filter(|(_, token)| *token == "*")
+            .map(|(hex, _)| Move {
+                from: *from,
+                to: *hex,
             })
             .collect();
 
-        let mut hex_map: HashMap<Hex, String> = moves_map
+        let hex_map: HashMap<Hex, String> = moves_map
             .into_iter()
             .filter(|(_, token)| *token != "*")
             .collect();
@@ -475,9 +522,76 @@ mod tests {
         actual_turns.sort();
 
         if expected_turns != actual_turns {
-            let actual_moves_map = moves_to_string(&mut hex_map, actual_turns);
-            pretty_assertions::assert_eq!(moves, actual_moves_map)
+            let expected_moves_map = turns_to_string(&hex_map, expected_turns);
+            let actual_moves_map = turns_to_string(&hex_map, actual_turns);
+            pretty_assertions::assert_str_eq!(expected_moves_map, actual_moves_map)
         }
+    }
+
+    #[test]
+    fn test_placement() {
+        assert_placements(r#"
+            .  a  .
+             .  B  *
+            .  *  *
+        "#)
+    }
+
+    #[test]
+    fn test_placement_with_multiple_layers() {
+        assert_placements(r#"
+        Layer 0
+            .  a  .
+             .  B  .
+            .  .  .
+        Layer 1
+            .  a  .
+             .  b  .
+            .  .  .
+        "#)
+    }
+
+    #[test]
+    fn test_placement_not_allowed_above_layer_0() {
+        assert_placements(r#"
+        Layer 0
+            .  a  .
+             .  b  .
+            .  .  a
+        Layer 1
+            .  .  .
+             .  B  .
+            .  .  .
+        "#)
+    }
+
+    #[test]
+    fn test_placement_uses_top_layer_for_hex_color() {
+        assert_placements(r#"
+        Layer 0
+            .  a  .
+             .  b  *
+            .  *  *
+        Layer 1
+            .  .  .
+             .  B  .
+            .  .  .
+        "#)
+    }
+
+
+    #[test]
+    fn test_queen_cannot_move_out_from_under_beetle() {
+        assert_moves(r#"
+        Layer 0
+            .  a  .
+             .  Q  .
+            .  .  .
+        Layer 1
+            .  .  .
+             .  b  .
+            .  .  .
+        "#)
     }
 
     #[test]

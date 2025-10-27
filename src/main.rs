@@ -9,8 +9,7 @@ use crate::bug::Bug;
 use crate::game::{Game, GameResult, Turn};
 use crate::hive::Color;
 use hex::Hex;
-use hive::Hive;
-use minimax::{Evaluation, Evaluator, IterativeOptions, ParallelOptions, Strategy, Winner};
+use minimax::{Evaluation, Evaluator, Strategy, Winner};
 use std::collections::HashMap;
 
 struct Point {
@@ -106,7 +105,7 @@ impl Evaluator for NumberOfPiecesAroundQueen {
             .map
             .iter()
             .filter(|(_, tile)| tile.bug == Bug::Queen)
-            .map(|(hex, tile)| (tile.color, s.hive.occupied_neighbors(hex).count() as i16))
+            .map(|(hex, tile)| (tile.color, s.hive.occupied_neighbors_at_same_level(hex).count() as i16))
             .collect();
 
         let inactive_player_pieces_around_queen = *statuses.get(&s.active_player.opposite()).unwrap_or(&0);
@@ -205,7 +204,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hex::{Direction, flat_distance, neighbor};
+    use crate::hex::{flat_distance, neighbor, Direction};
     use pretty_assertions::assert_eq;
 
     #[test]

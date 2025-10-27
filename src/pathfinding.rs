@@ -1,5 +1,5 @@
 use crate::hex;
-use crate::hex::{Hex, is_adjacent, neighbors, flat_distance};
+use crate::hex::{is_adjacent, Hex};
 use crate::hive::Hive;
 use crate::pathfinding::PathfindingError::HexNotPopulated;
 use std::cmp::Ordering;
@@ -36,11 +36,11 @@ pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
 
     //TODO: I don't think this logic should be here, it's too specific to each type of movement
     let is_slide = from.h == 0 && to.h == 0 && is_adjacent(from, to);
-    if is_slide && !hive.occupied_neighbors(from).any(|neighbor| is_adjacent(&neighbor, to)) {
+    if is_slide && !hive.occupied_neighbors_at_same_level(from).any(|neighbor| is_adjacent(&neighbor, to)) {
         return true;
     }
 
-    for hex in hive.occupied_neighbors(from) {
+    for hex in hive.occupied_neighbors_at_same_level(from) {
         if move_would_disconnect_piece(hive, from, to, &hex, &mut connected_pieces).unwrap() {
             return true;
         }
@@ -90,7 +90,7 @@ fn move_would_disconnect_piece(
             return Ok(false);
         }
 
-        for next in hive.occupied_neighbors(&current.hex) {
+        for next in hive.occupied_neighbors_at_same_level(&current.hex) {
             if Some(next) == hex_to_avoid {
                 continue;
             }
