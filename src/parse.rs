@@ -1,6 +1,5 @@
 use crate::hex::Hex;
 use crate::parse::HexMapParseError::{InvalidHexContents, MissingLayerNumber};
-use crate::{OddrCoordinate, hex_to_oddr, oddr_to_hex};
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::num::ParseIntError;
@@ -14,6 +13,36 @@ pub enum HexMapParseError {
     MissingLayerNumber,
     #[error("Hex contents can only be a single character, got: {contents}")]
     InvalidHexContents { contents: String },
+}
+
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
+struct OddrCoordinate {
+    row: i32,
+    col: i32,
+    height: i32,
+}
+
+fn hex_to_oddr(hex: &Hex) -> OddrCoordinate {
+    let parity = hex.r & 1;
+    let col = hex.q + (hex.r - parity) / 2;
+    let row = hex.r;
+
+    OddrCoordinate {
+        col,
+        row,
+        height: hex.h,
+    }
+}
+
+fn oddr_to_hex(oddr: &OddrCoordinate) -> Hex {
+    let parity = oddr.row & 1;
+    let q = oddr.col - (oddr.row - parity) / 2;
+    let r = oddr.row;
+    Hex {
+        q,
+        r,
+        h: oddr.height,
+    }
 }
 
 pub fn parse_hex_map_string(s: &str) -> Result<HashMap<Hex, String>, HexMapParseError> {
@@ -36,7 +65,7 @@ pub fn parse_hex_map_string(s: &str) -> Result<HashMap<Hex, String>, HexMapParse
                 }
                 token if token.len() == 1 => {
                     should_increment_row = true;
-                    let hex = crate::oddr_to_hex(&OddrCoordinate {
+                    let hex = oddr_to_hex(&OddrCoordinate {
                         row: row_num,
                         col: col_num,
                         height,

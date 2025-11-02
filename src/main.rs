@@ -10,40 +10,9 @@ mod zobrist;
 use crate::bug::Bug;
 use crate::game::{Game, GameResult, Turn};
 use crate::hive::{Color, Hive};
-use hex::Hex;
 use minimax::{Evaluation, Evaluator, IterativeOptions, ParallelOptions, Strategy, Winner};
 use std::collections::HashMap;
 use std::time::Duration;
-
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
-struct OddrCoordinate {
-    row: i32,
-    col: i32,
-    height: i32,
-}
-
-fn hex_to_oddr(hex: &Hex) -> OddrCoordinate {
-    let parity = hex.r & 1;
-    let col = hex.q + (hex.r - parity) / 2;
-    let row = hex.r;
-
-    OddrCoordinate {
-        col,
-        row,
-        height: hex.h,
-    }
-}
-
-fn oddr_to_hex(oddr: &OddrCoordinate) -> Hex {
-    let parity = oddr.row & 1;
-    let q = oddr.col - (oddr.row - parity) / 2;
-    let r = oddr.row;
-    Hex {
-        q,
-        r,
-        h: oddr.height,
-    }
-}
 
 struct HiveGame;
 
