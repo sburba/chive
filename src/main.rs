@@ -149,26 +149,3 @@ fn main() {
     }
     println!("{:?}", game.hive);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::hex::{flat_distance, neighbor, Direction};
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_distance() {
-        assert_eq!(
-            flat_distance(&Hex { q: 0, r: 0, h: 0 }, &Hex { q: -1, r: 0, h: 0 }),
-            1
-        )
-    }
-
-    #[test]
-    fn test_neighbor() {
-        assert_eq!(
-            neighbor(&Hex { q: 0, r: 0, h: 0 }, &Direction::UpLeft),
-            Hex { q: 0, r: -1, h: 0 }
-        )
-    }
-}

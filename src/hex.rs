@@ -112,4 +112,12 @@ mod tests {
         assert_eq!(1, flat_distance(&Hex{q: 0, r: 0, h: 0}, &Hex{q: 1, r: -1, h: 0}));
         assert_eq!(1, flat_distance(&Hex{q: 0, r: 0, h: 0}, &Hex{q: -1, r: 1, h: 0}));
     }
+    
+    #[test]
+    fn test_neighbor() {
+        pretty_assertions::assert_eq!(
+            neighbor(&Hex { q: 0, r: 0, h: 0 }, &Direction::UpLeft),
+            Hex { q: 0, r: -1, h: 0 }
+        )
+    }
 }
