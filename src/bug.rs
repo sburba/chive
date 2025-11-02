@@ -1,8 +1,8 @@
+use BugParseError::InvalidBugCharacter;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use strum::{EnumCount, EnumIter};
 use thiserror::Error;
-use BugParseError::InvalidBugCharacter;
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Ord, PartialOrd, EnumIter, EnumCount)]
 pub enum Bug {

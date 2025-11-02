@@ -154,7 +154,8 @@ impl Game {
                 }
 
                 new_map.insert(to, tile);
-                let new_zobrist_hash = self.zobrist_hash
+                let new_zobrist_hash = self
+                    .zobrist_hash
                     .with_removed_tile(self.zobrist_table, &from, &tile)
                     .with_added_tile(self.zobrist_table, &to, &tile)
                     .with_turn_change(self.zobrist_table);

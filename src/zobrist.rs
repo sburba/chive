@@ -1,11 +1,10 @@
-use std::ops::{BitXor, BitXorAssign};
-use std::sync::OnceLock;
-use rand::random;
-use strum::EnumCount;
 use crate::bug::Bug;
 use crate::hex::Hex;
 use crate::hive::{Color, Hive, Tile};
-
+use rand::random;
+use std::ops::{BitXor, BitXorAssign};
+use std::sync::OnceLock;
+use strum::EnumCount;
 
 const MIN_HEIGHT: usize = 0;
 const MAX_HEIGHT: usize = 5;
@@ -65,7 +64,8 @@ impl ZobristTable {
 
     fn new() -> ZobristTable {
         let mut piece_table: Box<ZobristPieceTable> = Box::new(
-            [[[[ZobristHash(0); AXIS_ARRAY_SIZE]; AXIS_ARRAY_SIZE]; HEIGHT_ARRAY_SIZE]; TILE_INDEX_COUNT],
+            [[[[ZobristHash(0); AXIS_ARRAY_SIZE]; AXIS_ARRAY_SIZE]; HEIGHT_ARRAY_SIZE];
+                TILE_INDEX_COUNT],
         );
 
         for tile_index in 0..TILE_INDEX_COUNT {
