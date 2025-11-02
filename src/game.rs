@@ -6,7 +6,7 @@ use crate::pathfinding::move_would_break_hive;
 use crate::zobrist::{ZobristHash, ZobristTable};
 use Turn::Skip;
 use itertools::Itertools;
-use std::collections::{HashMap, HashSet};
+use rustc_hash::{FxHashMap, FxHashSet};
 
 #[derive(Clone)]
 pub struct Game {
@@ -268,7 +268,7 @@ impl Game {
                                     ..possible_move
                                 });
 
-                        let unique_moves: HashSet<Hex> = HashSet::from_iter(possible_moves);
+                        let unique_moves: FxHashSet<Hex> = FxHashSet::from_iter(possible_moves);
 
                         let allowed_moves = unique_moves
                             .into_iter()
@@ -360,7 +360,7 @@ impl Game {
                 .collect();
         }
 
-        let mut placement_allowed: HashMap<Hex, bool> = HashMap::new();
+        let mut placement_allowed: FxHashMap<Hex, bool> = FxHashMap::default();
         let mut valid_turns: Vec<Turn> = Vec::new();
         let reserve =
             if active_player_reserve.len() <= 8 && active_player_reserve.contains(&Bug::Queen) {
@@ -436,7 +436,7 @@ impl Game {
             paths = new_paths;
         }
 
-        let mut unique_destinations: HashSet<Hex> = HashSet::new();
+        let mut unique_destinations: FxHashSet<Hex> = FxHashSet::default();
         unique_destinations.extend(
             paths
                 .into_iter()
@@ -448,7 +448,7 @@ impl Game {
 
     fn allowed_ant_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut current = *start;
-        let mut allowed_moves = HashSet::new();
+        let mut allowed_moves = FxHashSet::default();
         let mut frontier: Vec<Hex> = vec![];
         frontier.push(current);
 
@@ -486,7 +486,7 @@ impl Game {
         let neighbors: Vec<Hex> = self.hive.neighbors_at_same_level(hex).collect();
 
         let mut empty_seen = 0;
-        let mut allowed_slides: HashSet<Hex> = HashSet::new();
+        let mut allowed_slides: FxHashSet<Hex> = FxHashSet::default();
         for (i, hex) in neighbors.iter().enumerate() {
             if self.hive.is_occupied(hex) && Some(hex) != ignore_hex {
                 empty_seen = 0;
@@ -528,7 +528,7 @@ mod tests {
     use Turn::Move;
     use Turn::Placement;
 
-    fn turns_to_string(hex_map: &HashMap<Hex, String>, turns: Vec<Turn>) -> String {
+    fn turns_to_string(hex_map: &FxHashMap<Hex, String>, turns: Vec<Turn>) -> String {
         let mut turns_map = hex_map.clone();
         for turn in turns {
             match turn {
@@ -558,7 +558,7 @@ mod tests {
             })
             .collect();
 
-        let hex_map: HashMap<Hex, String> = placements_map
+        let hex_map: FxHashMap<Hex, String> = placements_map
             .into_iter()
             .filter(|(_, token)| *token != "*")
             .collect();
@@ -598,7 +598,7 @@ mod tests {
             })
             .collect();
 
-        let hex_map: HashMap<Hex, String> = moves_map
+        let hex_map: FxHashMap<Hex, String> = moves_map
             .into_iter()
             .filter(|(_, token)| *token != "*")
             .collect();

@@ -1,4 +1,3 @@
-use strum::EnumCount;
 mod bug;
 mod game;
 mod hex;
@@ -11,8 +10,8 @@ use crate::bug::Bug;
 use crate::game::{Game, GameResult, Turn};
 use crate::hive::{Color, Hive};
 use minimax::{Evaluation, Evaluator, IterativeOptions, ParallelOptions, Strategy, Winner};
-use std::collections::HashMap;
 use std::time::Duration;
+use rustc_hash::FxHashMap;
 
 struct HiveGame;
 
@@ -57,7 +56,7 @@ impl Evaluator for PiecesAroundQueenAndAvailableMoves {
     type G = HiveGame;
 
     fn evaluate(&self, s: &<Self::G as minimax::Game>::S) -> Evaluation {
-        let statuses: HashMap<_, _> = s
+        let statuses: FxHashMap<_, _> = s
             .hive
             .map
             .iter()
@@ -92,10 +91,6 @@ fn main() {
     let start = Game::from_hive(hive, Color::White);
 
     println!("{}", start.hive);
-    let evaluator = PiecesAroundQueenAndAvailableMoves {
-        piece_around_queen_cost: 100,
-        available_move_cost: 1,
-    };
     let mut strategy = minimax::ParallelSearch::new(
         PiecesAroundQueenAndAvailableMoves {
             piece_around_queen_cost: 100,
@@ -106,15 +101,11 @@ fn main() {
     );
     strategy.set_timeout(Duration::from_secs(10));
     let mut game = start;
-    let mut i = 1;
-    while let Some(best_move) = strategy.choose_move(&game) {
-        println!("Turn {}", i);
-        println!("Score {}", evaluator.evaluate(&game));
-        game = game.with_turn_applied(best_move);
-        println!("Move {:?}", best_move);
-        println!("{}", game.hive);
-        println!("=================");
-        i += 1;
+    for _ in 0..3 {
+        game = game.with_turn_applied(strategy.choose_move(&game).unwrap())
     }
+    // while let Some(best_move) = strategy.choose_move(&game) {
+    //     game = game.with_turn_applied(best_move);
+    // }
     println!("{:?}", game.hive);
 }

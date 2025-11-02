@@ -1,8 +1,8 @@
 use crate::hex::Hex;
 use crate::parse::HexMapParseError::{InvalidHexContents, MissingLayerNumber};
 use std::cmp::{max, min};
-use std::collections::HashMap;
 use std::num::ParseIntError;
+use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -45,8 +45,8 @@ fn oddr_to_hex(oddr: &OddrCoordinate) -> Hex {
     }
 }
 
-pub fn parse_hex_map_string(s: &str) -> Result<HashMap<Hex, String>, HexMapParseError> {
-    let mut map = HashMap::new();
+pub fn parse_hex_map_string(s: &str) -> Result<FxHashMap<Hex, String>, HexMapParseError> {
+    let mut map = FxHashMap::default();
     let rows = s.split("\n").map(|row| row.split_whitespace());
     let mut height = 0;
     let mut row_num = 0;
@@ -97,7 +97,7 @@ struct HexMapDimensions {
     height_max: i32,
 }
 
-pub fn hex_map_to_string(hex_map: &HashMap<Hex, String>) -> String {
+pub fn hex_map_to_string(hex_map: &FxHashMap<Hex, String>) -> String {
     if hex_map.is_empty() {
         return "<empty>".to_owned();
     }

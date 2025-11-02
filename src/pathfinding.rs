@@ -3,7 +3,8 @@ use crate::hex::{Hex, is_adjacent};
 use crate::hive::Hive;
 use crate::pathfinding::PathfindingError::HexNotPopulated;
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap};
+use rustc_hash::FxHashSet;
 use thiserror::Error;
 
 #[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
@@ -32,7 +33,7 @@ impl PartialOrd for PathLocation {
 }
 
 pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
-    let mut connected_pieces = HashSet::new();
+    let mut connected_pieces = FxHashSet::default();
 
     // You can't break the hive by moving from any layer but the bottom layer
     if from.h != 0 {
@@ -68,7 +69,7 @@ fn move_would_disconnect_piece(
     from: &Hex,
     to: &Hex,
     affected_piece: &Hex,
-    already_connected_pieces: &mut HashSet<Hex>,
+    already_connected_pieces: &mut FxHashSet<Hex>,
 ) -> Result<bool, PathfindingError> {
     if !hive.map.contains_key(affected_piece) {
         return Err(HexNotPopulated {
@@ -85,7 +86,7 @@ fn move_would_disconnect_piece(
         priority: 0,
     };
     frontier.push(start_location);
-    let mut hexes_seen = HashSet::new();
+    let mut hexes_seen = FxHashSet::default();
     hexes_seen.insert(*affected_piece);
 
     while !frontier.is_empty() {

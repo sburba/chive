@@ -1,9 +1,9 @@
 use crate::bug::{Bug, BugParseError};
 use crate::hex::{Hex, neighbors};
 use crate::parse::{HexMapParseError, hex_map_to_string, parse_hex_map_string};
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
+use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Eq, PartialEq, Copy, Ord, PartialOrd, Hash)]
@@ -52,12 +52,12 @@ impl Display for Tile {
 
 #[derive(Debug, Clone)]
 pub struct Hive {
-    pub map: HashMap<Hex, Tile>,
+    pub map: FxHashMap<Hex, Tile>,
 }
 
 impl Hive {
-    pub fn from_hex_map(hex_map: &HashMap<Hex, String>) -> Result<Hive, HiveParseError> {
-        let mut map: HashMap<Hex, Tile> = HashMap::new();
+    pub fn from_hex_map(hex_map: &FxHashMap<Hex, String>) -> Result<Hive, HiveParseError> {
+        let mut map: FxHashMap<Hex, Tile> = FxHashMap::default();
         for (hex, token) in hex_map {
             if token == "." {
                 continue;
@@ -75,7 +75,7 @@ impl Hive {
         Ok(Hive { map })
     }
 
-    pub fn to_hex_map(&self) -> HashMap<Hex, String> {
+    pub fn to_hex_map(&self) -> FxHashMap<Hex, String> {
         self.map
             .iter()
             .map(|(hex, tile)| (*hex, tile.to_string()))
