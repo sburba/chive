@@ -1,35 +1,19 @@
+use strum::EnumCount;
 mod bug;
 mod game;
 mod hex;
 mod hive;
 mod parse;
 mod pathfinding;
+mod zobrist;
 
 use crate::bug::Bug;
 use crate::game::{Game, GameResult, Turn};
-use crate::hive::Color;
+use crate::hive::{Color, Hive};
 use hex::Hex;
-use minimax::{Evaluation, Evaluator, Strategy, Winner};
+use minimax::{Evaluation, Evaluator, IterativeOptions, ParallelOptions, Strategy, Winner};
 use std::collections::HashMap;
-
-struct Point {
-    x: i32,
-    y: i32,
-}
-
-const SIZE: f64 = 50f64;
-const THREE_HALVES: f64 = 3f64 / 2f64;
-const SQRT_3: f64 = 1.732050807568877293527446341505872367_f64;
-const HALF_SQRT_3: f64 = SQRT_3 / 2f64;
-
-fn cube_coordinate_to_point(cube: Hex) -> Point {
-    let x = THREE_HALVES * cube.q as f64;
-    let y = HALF_SQRT_3 * cube.q as f64 + SQRT_3 * cube.r as f64;
-    Point {
-        x: (x * SIZE) as i32,
-        y: (y * SIZE) as i32,
-    }
-}
+use std::time::Duration;
 
 #[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
 struct OddrCoordinate {
@@ -89,14 +73,18 @@ impl minimax::Game for HiveGame {
         }
     }
 
-    fn zobrist_hash(_state: &Self::S) -> u64 {
-        todo!()
+    fn zobrist_hash(state: &Self::S) -> u64 {
+        state.zobrist_hash.value()
     }
 }
 
 #[derive(Clone)]
-struct NumberOfPiecesAroundQueen;
-impl Evaluator for NumberOfPiecesAroundQueen {
+struct PiecesAroundQueenAndAvailableMoves {
+    piece_around_queen_cost: i16,
+    available_move_cost: i16,
+}
+
+impl Evaluator for PiecesAroundQueenAndAvailableMoves {
     type G = HiveGame;
 
     fn evaluate(&self, s: &<Self::G as minimax::Game>::S) -> Evaluation {
@@ -105,98 +93,59 @@ impl Evaluator for NumberOfPiecesAroundQueen {
             .map
             .iter()
             .filter(|(_, tile)| tile.bug == Bug::Queen)
-            .map(|(hex, tile)| (tile.color, s.hive.occupied_neighbors_at_same_level(hex).count() as i16))
+            .map(|(hex, tile)| {
+                (
+                    tile.color,
+                    s.hive.occupied_neighbors_at_same_level(hex).count() as i16,
+                )
+            })
             .collect();
 
-        let inactive_player_pieces_around_queen = *statuses.get(&s.active_player.opposite()).unwrap_or(&0);
+        let inactive_player_pieces_around_queen =
+            *statuses.get(&s.active_player.opposite()).unwrap_or(&0);
         let active_player_pieces_around_queen = *statuses.get(&s.active_player).unwrap_or(&0);
         let active_player_available_moves = s.valid_turns().len() as i16;
-        let score = (inactive_player_pieces_around_queen - active_player_pieces_around_queen) * 100 + active_player_available_moves;
-        score
+        (inactive_player_pieces_around_queen - active_player_pieces_around_queen)
+            * self.piece_around_queen_cost
+            + active_player_available_moves * self.available_move_cost
     }
 }
 
 fn main() {
-    // let start = Game {
-    //     hive: Hive {
-    //         map: HashMap::new(),
-    //     },
-    //     white_reserve: vec![
-    //         Bug::Queen,
-    //         Bug::Ant,
-    //         Bug::Ant,
-    //         Bug::Ant,
-    //         Bug::Beetle,
-    //         Bug::Beetle,
-    //         Bug::Grasshopper,
-    //         Bug::Grasshopper,
-    //         Bug::Grasshopper,
-    //         Bug::Spider,
-    //         Bug::Spider,
-    //     ],
-    //     black_reserve: vec![
-    //         Bug::Queen,
-    //         Bug::Ant,
-    //         Bug::Spider,
-    //         Bug::Spider,
-    //     ],
-    //     active_player: Color::White,
-    // };
-    // let mut strategy = minimax::ParallelSearch::new(
-    //     NumberOfPiecesAroundQueen {},
-    //     IterativeOptions::new(),
-    //     ParallelOptions::new(),
-    // );
-    let start = Game {
-        hive: r#"
+    let hive: Hive = r#"
             .  .  .  .
            .  .  .  .
             .  .  .  .
            .  .  .  .
         "#
-        .parse()
-        .unwrap(),
-        white_reserve: vec![
-            Bug::Queen,
-            Bug::Ant,
-            Bug::Ant,
-            Bug::Ant,
-            Bug::Beetle,
-            Bug::Beetle,
-            Bug::Grasshopper,
-            Bug::Grasshopper,
-            Bug::Grasshopper,
-            Bug::Spider,
-            Bug::Spider,
-        ],
-        black_reserve: vec![
-            Bug::Queen,
-            Bug::Ant,
-            Bug::Ant,
-            Bug::Ant,
-            Bug::Beetle,
-            Bug::Beetle,
-            Bug::Grasshopper,
-            Bug::Grasshopper,
-            Bug::Grasshopper,
-            Bug::Spider,
-            Bug::Spider,
-        ],
-        active_player: Color::White,
+    .parse()
+    .unwrap();
+    let start = Game::from_hive(hive, Color::White);
+
+    println!("{}", start.hive);
+    let evaluator = PiecesAroundQueenAndAvailableMoves {
+        piece_around_queen_cost: 100,
+        available_move_cost: 1,
     };
-    println!("{}", start.hive.to_string());
-    let test = NumberOfPiecesAroundQueen {};
-    let mut strategy = minimax::Negamax::new(NumberOfPiecesAroundQueen, 4);
+    let mut strategy = minimax::ParallelSearch::new(
+        PiecesAroundQueenAndAvailableMoves {
+            piece_around_queen_cost: 100,
+            available_move_cost: 1,
+        },
+        IterativeOptions::new(),
+        ParallelOptions::new(),
+    );
+    strategy.set_timeout(Duration::from_secs(10));
     let mut game = start;
     let mut i = 1;
     while let Some(best_move) = strategy.choose_move(&game) {
         println!("Turn {}", i);
-        println!("Score {}", test.evaluate(&game));
+        println!("Score {}", evaluator.evaluate(&game));
         game = game.with_turn_applied(best_move);
         println!("Move {:?}", best_move);
         println!("{}", game.hive);
         println!("=================");
-        i = i + 1;
+        i += 1;
     }
     println!("{:?}", game.hive);
 }
@@ -222,7 +171,4 @@ mod tests {
             Hex { q: 0, r: -1, h: 0 }
         )
     }
-
-    #[test]
-    fn test_shortest_path() {}
 }

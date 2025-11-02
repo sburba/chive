@@ -3,37 +3,101 @@ use crate::game::Turn::{Move, Placement};
 use crate::hex::{Hex, is_adjacent, neighbors};
 use crate::hive::{Color, Hive, Tile};
 use crate::pathfinding::move_would_break_hive;
+use crate::zobrist::{ZobristHash, ZobristTable};
+use Turn::Skip;
 use itertools::Itertools;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Clone)]
 pub struct Game {
     pub hive: Hive,
+    pub zobrist_table: &'static ZobristTable,
+    pub zobrist_hash: ZobristHash,
     pub white_reserve: Vec<Bug>,
     pub black_reserve: Vec<Bug>,
     pub active_player: Color,
 }
-
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, Hash)]
 pub enum Turn {
     Placement { hex: Hex, tile: Tile },
     Move { from: Hex, to: Hex },
+    Skip,
 }
 
+#[derive(Debug)]
 pub enum GameResult {
     None,
     Draw,
     Winner { color: Color },
 }
 
+fn default_reserve() -> Vec<Bug> {
+    vec![
+        Bug::Queen,
+        Bug::Ant,
+        Bug::Ant,
+        Bug::Ant,
+        Bug::Beetle,
+        Bug::Beetle,
+        Bug::Grasshopper,
+        Bug::Grasshopper,
+        Bug::Grasshopper,
+        Bug::Spider,
+        Bug::Spider,
+    ]
+}
+
+impl Default for Game {
+    fn default() -> Self {
+        Game {
+            hive: Hive {
+                map: Default::default(),
+            },
+            white_reserve: default_reserve(),
+            black_reserve: default_reserve(),
+            active_player: Color::White,
+            zobrist_table: ZobristTable::get(),
+            zobrist_hash: Default::default(),
+        }
+    }
+}
+
 impl Game {
+    pub fn from_hive(hive: Hive, active_player: Color) -> Game {
+        let zobrist_table = ZobristTable::get();
+        let zobrist_hash = zobrist_table.hash(&hive, active_player);
+        let mut white_reserve = default_reserve();
+        let mut black_reserve = default_reserve();
+        for (_, tile) in hive.map.iter() {
+            if tile.color == Color::White {
+                let index = white_reserve.iter().position(|b| *b == tile.bug).unwrap();
+                white_reserve.remove(index);
+            } else {
+                let index = black_reserve.iter().position(|b| *b == tile.bug).unwrap();
+                black_reserve.remove(index);
+            }
+        }
+
+        Game {
+            hive,
+            white_reserve,
+            black_reserve,
+            zobrist_table,
+            zobrist_hash,
+            active_player,
+        }
+    }
+
     pub fn with_turn_applied(&self, turn: Turn) -> Game {
         let mut new_map = self.hive.map.clone();
         match turn {
             Placement { tile, hex } => {
                 let mut new_reserve = self.active_reserve().clone();
                 if tile.color != self.active_player {
-                    panic!("Cannot apply {turn:?}, is not the active player")
+                    panic!(
+                        "Cannot apply {turn:?}, {} is not the active player",
+                        tile.color
+                    )
                 }
 
                 let bug_index = self
@@ -65,12 +129,18 @@ impl Game {
                 }
 
                 new_map.insert(hex, tile);
-                //TODO: Handle the case that the opposing player can not move
+                let new_zobrist_hash = self
+                    .zobrist_hash
+                    .with_added_tile(self.zobrist_table, &hex, &tile)
+                    .with_turn_change(self.zobrist_table);
+
                 Game {
                     hive: Hive { map: new_map },
                     white_reserve,
                     black_reserve,
                     active_player: self.active_player.opposite(),
+                    zobrist_table: self.zobrist_table,
+                    zobrist_hash: new_zobrist_hash,
                 }
             }
             Move { from, to } => {
@@ -84,12 +154,29 @@ impl Game {
                 }
 
                 new_map.insert(to, tile);
-                //TODO: Handle the case that the opposing player can not move
+                let new_zobrist_hash = self.zobrist_hash
+                    .with_removed_tile(self.zobrist_table, &from, &tile)
+                    .with_added_tile(self.zobrist_table, &to, &tile)
+                    .with_turn_change(self.zobrist_table);
+
                 Game {
                     hive: Hive { map: new_map },
                     white_reserve: self.white_reserve.clone(),
                     black_reserve: self.black_reserve.clone(),
                     active_player: self.active_player.opposite(),
+                    zobrist_table: self.zobrist_table,
+                    zobrist_hash: new_zobrist_hash,
+                }
+            }
+            Skip => {
+                let new_zobrist_hash = self.zobrist_hash ^ self.zobrist_table.black_to_move;
+                Game {
+                    hive: self.hive.clone(),
+                    white_reserve: self.white_reserve.clone(),
+                    black_reserve: self.black_reserve.clone(),
+                    active_player: self.active_player.opposite(),
+                    zobrist_table: self.zobrist_table,
+                    zobrist_hash: new_zobrist_hash,
                 }
             }
         }
@@ -106,7 +193,7 @@ impl Game {
             .map(|(_, t)| t.color)
             .collect();
 
-        if losing_colors.len() == 0 {
+        if losing_colors.is_empty() {
             return GameResult::None;
         }
         if losing_colors.len() == 2 {
@@ -114,7 +201,7 @@ impl Game {
         }
 
         GameResult::Winner {
-            color: *losing_colors.first().unwrap(),
+            color: losing_colors.first().unwrap().opposite(),
         }
     }
 
@@ -139,6 +226,9 @@ impl Game {
         // Find all valid moves
         valid_turns.extend(self.valid_moves());
 
+        if valid_turns.is_empty() {
+            valid_turns.push(Skip)
+        }
         valid_turns
     }
 
@@ -147,7 +237,11 @@ impl Game {
         if self.active_reserve().contains(&Bug::Queen) {
             return Vec::new();
         }
-        let toplevel_pieces = self.hive.map.iter().filter(|(hex, _)| self.hive.stack_height(hex) - 1 == hex.h);
+        let toplevel_pieces = self
+            .hive
+            .map
+            .iter()
+            .filter(|(hex, _)| self.hive.stack_height(hex) - 1 == hex.h);
         for (hex, tile) in toplevel_pieces {
             if tile.color == self.active_player {
                 match tile.bug {
@@ -180,7 +274,6 @@ impl Game {
                     Bug::Queen => {
                         let allowed_moves = self
                             .allowed_slides(hex, None)
-                            .into_iter()
                             .filter(|possible_move| {
                                 !move_would_break_hive(&self.hive, hex, possible_move)
                             })
@@ -309,10 +402,10 @@ impl Game {
             let mut new_paths: Vec<Vec<Hex>> = vec![];
             for path in paths {
                 let hex = path.last().unwrap();
-                for dest in self.allowed_slides(&hex, Some(start)) {
+                for dest in self.allowed_slides(hex, Some(start)) {
                     if !self
                         .hive
-                        .occupied_neighbors_at_same_level(&hex)
+                        .occupied_neighbors_at_same_level(hex)
                         .filter(|neighbor| neighbor != start)
                         .any(|neighbor| is_adjacent(&dest, &neighbor))
                     {
@@ -385,7 +478,7 @@ impl Game {
         let mut empty_seen = 0;
         let mut allowed_slides: HashSet<Hex> = HashSet::new();
         for (i, hex) in neighbors.iter().enumerate() {
-            if self.hive.is_occupied(&hex) && Some(hex) != ignore_hex {
+            if self.hive.is_occupied(hex) && Some(hex) != ignore_hex {
                 empty_seen = 0;
             } else {
                 if empty_seen > 0 {
@@ -398,7 +491,7 @@ impl Game {
 
         let first = neighbors.first().unwrap();
         let last = neighbors.last().unwrap();
-        if !self.hive.is_occupied(&first) && !self.hive.is_occupied(last) {
+        if !self.hive.is_occupied(first) && !self.hive.is_occupied(last) {
             allowed_slides.insert(*first);
             allowed_slides.insert(*last);
         }
@@ -413,7 +506,7 @@ impl Game {
                 self.hive
                     .map
                     .get(&adjacent_hex)
-                    .map_or(false, |tile| tile.color == *color)
+                    .is_some_and(|tile| tile.color == *color)
             })
     }
 }
@@ -425,16 +518,17 @@ mod tests {
     use Turn::Move;
     use Turn::Placement;
 
-    fn turns_to_string(hex_map: &HashMap<Hex, String>, moves: Vec<Turn>) -> String {
+    fn turns_to_string(hex_map: &HashMap<Hex, String>, turns: Vec<Turn>) -> String {
         let mut turns_map = hex_map.clone();
-        for mv in moves {
-            match mv {
+        for turn in turns {
+            match turn {
                 Placement { hex, tile: _ } => {
                     turns_map.insert(hex, "*".to_owned());
                 }
                 Move { from: _, to } => {
                     turns_map.insert(to, "*".to_owned());
                 }
+                Skip => {}
             }
         }
         hex_map_to_string(&turns_map)
@@ -460,11 +554,15 @@ mod tests {
             .collect();
         let hive = Hive::from_hex_map(&hex_map).unwrap();
 
+        let zobrist_table = ZobristTable::get();
+        let zobrist_hash = zobrist_table.hash(&hive, Color::White);
         let game = Game {
             hive,
             white_reserve: vec![Bug::Queen],
             black_reserve: vec![],
             active_player: Color::White,
+            zobrist_table,
+            zobrist_hash,
         };
 
         let mut actual_placements: Vec<Turn> = game
@@ -473,6 +571,7 @@ mod tests {
             .filter(|turn| match turn {
                 Placement { .. } => true,
                 Move { .. } => false,
+                Skip => false,
             })
             .collect();
 
@@ -509,11 +608,15 @@ mod tests {
             .collect();
         let hive = Hive::from_hex_map(&hex_map).unwrap();
 
+        let zobrist_table = ZobristTable::get();
+        let zobrist_hash = zobrist_table.hash(&hive, Color::White);
         let game = Game {
             hive,
             white_reserve: vec![],
             black_reserve: vec![],
             active_player: Color::White,
+            zobrist_table,
+            zobrist_hash,
         };
 
         let mut actual_turns = game.valid_turns();
@@ -530,16 +633,19 @@ mod tests {
 
     #[test]
     fn test_placement() {
-        assert_placements(r#"
+        assert_placements(
+            r#"
             .  a  .
              .  B  *
             .  *  *
-        "#)
+        "#,
+        )
     }
 
     #[test]
     fn test_placement_with_multiple_layers() {
-        assert_placements(r#"
+        assert_placements(
+            r#"
         Layer 0
             .  a  .
              .  B  .
@@ -548,12 +654,14 @@ mod tests {
             .  a  .
              .  b  .
             .  .  .
-        "#)
+        "#,
+        )
     }
 
     #[test]
     fn test_placement_not_allowed_above_layer_0() {
-        assert_placements(r#"
+        assert_placements(
+            r#"
         Layer 0
             .  a  .
              .  b  .
@@ -562,12 +670,14 @@ mod tests {
             .  .  .
              .  B  .
             .  .  .
-        "#)
+        "#,
+        )
     }
 
     #[test]
     fn test_placement_uses_top_layer_for_hex_color() {
-        assert_placements(r#"
+        assert_placements(
+            r#"
         Layer 0
             .  a  .
              .  b  *
@@ -576,13 +686,14 @@ mod tests {
             .  .  .
              .  B  .
             .  .  .
-        "#)
+        "#,
+        )
     }
-
 
     #[test]
     fn test_queen_cannot_move_out_from_under_beetle() {
-        assert_moves(r#"
+        assert_moves(
+            r#"
         Layer 0
             .  a  .
              .  Q  .
@@ -591,7 +702,8 @@ mod tests {
             .  .  .
              .  b  .
             .  .  .
-        "#)
+        "#,
+        )
     }
 
     #[test]

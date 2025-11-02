@@ -134,9 +134,7 @@ impl Hive {
 
 impl Display for Hive {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let hex_map: HashMap<Hex, String> =
-            self.map.iter().map(|(h, t)| (*h, t.to_string())).collect();
-        write!(f, "{}", hex_map_to_string(&hex_map))
+        write!(f, "{}", hex_map_to_string(&self.to_hex_map()))
     }
 }
 

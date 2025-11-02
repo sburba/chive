@@ -1,6 +1,5 @@
 use std::ops;
-use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
+use strum::{EnumIter, IntoEnumIterator};
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Ord, PartialOrd)]
 pub struct Hex {

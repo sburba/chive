@@ -100,7 +100,7 @@ pub fn hex_map_to_string(hex_map: &HashMap<Hex, String>) -> String {
             // Indent every odd row. Use binary and instead of mod so that it works for negative
             // numbers. For the purpose of this function, zero is even.
             if row & 1 == 1 {
-                map_str.push_str(" ")
+                map_str.push(' ')
             }
             for col in dimensions.col_min..=dimensions.col_max {
                 let default = ".".to_string();
