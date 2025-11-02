@@ -64,8 +64,6 @@ impl Default for Game {
 
 impl Game {
     pub fn from_hive(hive: Hive, active_player: Color) -> Game {
-        let zobrist_table = ZobristTable::get();
-        let zobrist_hash = zobrist_table.hash(&hive, active_player);
         let mut white_reserve = default_reserve();
         let mut black_reserve = default_reserve();
         for (_, tile) in hive.map.iter() {
@@ -78,6 +76,17 @@ impl Game {
             }
         }
 
+        Self::from_hive_with_reserves(hive, active_player, white_reserve, black_reserve)
+    }
+
+    pub fn from_hive_with_reserves(
+        hive: Hive,
+        active_player: Color,
+        white_reserve: Vec<Bug>,
+        black_reserve: Vec<Bug>,
+    ) -> Game {
+        let zobrist_table = ZobristTable::get();
+        let zobrist_hash = zobrist_table.hash(&hive, active_player);
         Game {
             hive,
             white_reserve,
@@ -554,26 +563,12 @@ mod tests {
             .filter(|(_, token)| *token != "*")
             .collect();
         let hive = Hive::from_hex_map(&hex_map).unwrap();
-
-        let zobrist_table = ZobristTable::get();
-        let zobrist_hash = zobrist_table.hash(&hive, Color::White);
-        let game = Game {
-            hive,
-            white_reserve: vec![Bug::Queen],
-            black_reserve: vec![],
-            active_player: Color::White,
-            zobrist_table,
-            zobrist_hash,
-        };
+        let game = Game::from_hive(hive, Color::White);
 
         let mut actual_placements: Vec<Turn> = game
             .valid_turns()
             .into_iter()
-            .filter(|turn| match turn {
-                Placement { .. } => true,
-                Move { .. } => false,
-                Skip => false,
-            })
+            .filter(|turn| matches!(turn, Placement { .. }))
             .collect();
 
         expected_placements.sort();
@@ -608,19 +603,9 @@ mod tests {
             .filter(|(_, token)| *token != "*")
             .collect();
         let hive = Hive::from_hex_map(&hex_map).unwrap();
+        let game = Game::from_hive_with_reserves(hive, Color::White, vec![], vec![]);
 
-        let zobrist_table = ZobristTable::get();
-        let zobrist_hash = zobrist_table.hash(&hive, Color::White);
-        let game = Game {
-            hive,
-            white_reserve: vec![],
-            black_reserve: vec![],
-            active_player: Color::White,
-            zobrist_table,
-            zobrist_hash,
-        };
-
-        let mut actual_turns = game.valid_turns();
+        let mut actual_turns: Vec<Turn> = game.valid_turns();
 
         expected_turns.sort();
         actual_turns.sort();
