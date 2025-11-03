@@ -1,5 +1,5 @@
-use crate::hex::Hex;
-use crate::parse::HexMapParseError::{InvalidHexContents, MissingLayerNumber};
+use crate::engine::hex::Hex;
+use crate::engine::parse::HexMapParseError::{InvalidHexContents, MissingLayerNumber};
 use std::cmp::{max, min};
 use std::num::ParseIntError;
 use rustc_hash::FxHashMap;

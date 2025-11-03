@@ -1,7 +1,7 @@
-use crate::hex;
-use crate::hex::{Hex, is_adjacent};
-use crate::hive::Hive;
-use crate::pathfinding::PathfindingError::HexNotPopulated;
+use crate::engine::hex;
+use crate::engine::hex::{Hex, is_adjacent};
+use crate::engine::hive::Hive;
+use crate::engine::pathfinding::PathfindingError::HexNotPopulated;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap};
 use rustc_hash::FxHashSet;

@@ -1,6 +1,6 @@
-use crate::bug::{Bug, BugParseError};
-use crate::hex::{Hex, neighbors};
-use crate::parse::{HexMapParseError, hex_map_to_string, parse_hex_map_string};
+use crate::engine::bug::{Bug, BugParseError};
+use crate::engine::hex::{Hex, neighbors};
+use crate::engine::parse::{HexMapParseError, hex_map_to_string, parse_hex_map_string};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use rustc_hash::FxHashMap;

@@ -1,9 +1,9 @@
-use crate::bug::Bug;
-use crate::game::Turn::{Move, Placement};
-use crate::hex::{Hex, is_adjacent, neighbors};
-use crate::hive::{Color, Hive, Tile};
-use crate::pathfinding::move_would_break_hive;
-use crate::zobrist::{ZobristHash, ZobristTable};
+use crate::engine::bug::Bug;
+use crate::engine::game::Turn::{Move, Placement};
+use crate::engine::hex::{Hex, is_adjacent, neighbors};
+use crate::engine::hive::{Color, Hive, Tile};
+use crate::engine::pathfinding::move_would_break_hive;
+use crate::engine::zobrist::{ZobristHash, ZobristTable};
 use Turn::Skip;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -524,7 +524,7 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse::{hex_map_to_string, parse_hex_map_string};
+    use crate::engine::parse::{hex_map_to_string, parse_hex_map_string};
     use Turn::Move;
     use Turn::Placement;
 

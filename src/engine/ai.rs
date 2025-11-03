@@ -1,19 +1,9 @@
-mod bug;
-mod game;
-mod hex;
-mod hive;
-mod parse;
-mod pathfinding;
-mod zobrist;
-
-use crate::bug::Bug;
-use crate::game::{Game, GameResult, Turn};
-use crate::hive::{Color, Hive};
-use minimax::{Evaluation, Evaluator, IterativeOptions, ParallelOptions, Strategy, Winner};
-use std::time::Duration;
+use minimax::{Evaluation, Evaluator, Winner};
 use rustc_hash::FxHashMap;
+use crate::engine::bug::Bug;
+use crate::engine::game::{Game, GameResult, Turn};
 
-struct HiveGame;
+pub struct HiveGame;
 
 impl minimax::Game for HiveGame {
     type S = Game;
@@ -47,9 +37,9 @@ impl minimax::Game for HiveGame {
 }
 
 #[derive(Clone)]
-struct PiecesAroundQueenAndAvailableMoves {
-    piece_around_queen_cost: i16,
-    available_move_cost: i16,
+pub struct PiecesAroundQueenAndAvailableMoves {
+    pub piece_around_queen_cost: i16,
+    pub available_move_cost: i16,
 }
 
 impl Evaluator for PiecesAroundQueenAndAvailableMoves {
@@ -77,35 +67,4 @@ impl Evaluator for PiecesAroundQueenAndAvailableMoves {
             * self.piece_around_queen_cost
             + active_player_available_moves * self.available_move_cost
     }
-}
-
-fn main() {
-    let hive: Hive = r#"
-            .  .  .  .
-           .  .  .  .
-            .  .  .  .
-           .  .  .  .
-        "#
-    .parse()
-    .unwrap();
-    let start = Game::from_hive(hive, Color::White);
-
-    println!("{}", start.hive);
-    let mut strategy = minimax::ParallelSearch::new(
-        PiecesAroundQueenAndAvailableMoves {
-            piece_around_queen_cost: 100,
-            available_move_cost: 1,
-        },
-        IterativeOptions::new(),
-        ParallelOptions::new(),
-    );
-    strategy.set_timeout(Duration::from_secs(10));
-    let mut game = start;
-    for _ in 0..3 {
-        game = game.with_turn_applied(strategy.choose_move(&game).unwrap())
-    }
-    // while let Some(best_move) = strategy.choose_move(&game) {
-    //     game = game.with_turn_applied(best_move);
-    // }
-    println!("{:?}", game.hive);
 }

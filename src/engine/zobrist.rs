@@ -1,6 +1,6 @@
-use crate::bug::Bug;
-use crate::hex::Hex;
-use crate::hive::{Color, Hive, Tile};
+use crate::engine::bug::Bug;
+use crate::engine::hex::Hex;
+use crate::engine::hive::{Color, Hive, Tile};
 use rand::random;
 use std::ops::{BitXor, BitXorAssign};
 use std::sync::OnceLock;
