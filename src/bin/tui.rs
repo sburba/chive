@@ -13,7 +13,7 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::prelude::Direction;
 use ratatui::style::Stylize;
-use ratatui::text::{Line, Span, Text};
+use ratatui::text::{Line, Span};
 use ratatui::{DefaultTerminal, Frame};
 use rustc_hash::FxHashSet;
 use std::io;
@@ -39,11 +39,11 @@ pub enum AppError {
     AiError(String),
 }
 
-fn tile_to_text<'a>(tile: Tile) -> Text<'a> {
+fn tile_to_span<'a>(tile: Tile) -> Span<'a> {
     if tile.color == Color::White {
-        Text::raw(tile.to_string()).black().on_white()
+        Span::from(tile.to_string()).black().on_white()
     } else {
-        Text::raw(tile.to_string()).white().on_black()
+        Span::from(tile.to_string()).white().on_black()
     }
 }
 
@@ -213,26 +213,32 @@ impl App {
             ])
             .split(frame.area());
 
-        let white_pieces = self
-            .game
-            .white_reserve
+        self.draw_reserve(Color::White, frame, layout[0]);
+        self.draw_reserve(Color::Black, frame, layout[1]);
+        self.draw_stack(frame, layout[2]);
+        self.draw_map(frame, &layout[3])
+    }
+
+    fn draw_reserve(&self, color: Color, frame: &mut Frame, area: Rect) {
+        let (reserve, name) = if color == Color::White {
+            (&self.game.white_reserve, "White")
+        } else {
+            (&self.game.black_reserve, "Black")
+        };
+
+        #[allow(unstable_name_collisions)]
+        let pieces = reserve
             .iter()
-            .map(|b| b.to_string())
-            .join(", ");
-        let black_pieces = self
-            .game
-            .black_reserve
-            .iter()
-            .map(|b| b.to_string())
-            .join(", ");
-        frame.render_widget(
-            Text::raw(format!("White Reserve: {white_pieces}")),
-            layout[0],
-        );
-        frame.render_widget(
-            Text::raw(format!("Black Reserve: {black_pieces}")),
-            layout[1],
-        );
+            .map(|b| tile_to_span(Tile { bug: *b, color }))
+            .intersperse(Span::from(", "));
+        let reserve: Vec<Span> = [Span::from(format!("{name} Reserve: "))]
+            .into_iter()
+            .chain(pieces)
+            .collect();
+        frame.render_widget(Line::from(reserve), area);
+    }
+
+    fn draw_stack(&self, frame: &mut Frame, area: Rect) {
         let cursor_hex_pos = self.cursor_pos.to_hex();
 
         let mut spans: Vec<Span> = vec![Span::raw("Stack: ")];
@@ -248,8 +254,7 @@ impl App {
             }
         }
         let stack_text = Line::from(spans);
-        frame.render_widget(stack_text, layout[2]);
-        self.draw_map(frame, &layout[3])
+        frame.render_widget(stack_text, area);
     }
 
     fn draw_map(&self, frame: &mut Frame, area: &Rect) {
@@ -286,7 +291,7 @@ impl App {
             FxHashSet::default()
         };
 
-        let default = Text::raw(".");
+        let default = Span::from(".");
         for (i, cell) in cells.enumerate() {
             let visual_row = (i as i32 / board_dimensions.width()) - 1;
             let visual_col = (i as i32 % board_dimensions.width()) - 1;
@@ -307,7 +312,7 @@ impl App {
                 .game
                 .hive
                 .top_tile_at(&hex)
-                .map(tile_to_text)
+                .map(tile_to_span)
                 .unwrap_or(default.clone());
             if Some(row_col) == self.selected_pos {
                 text = text.slow_blink();
