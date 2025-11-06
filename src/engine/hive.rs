@@ -4,25 +4,15 @@ use crate::engine::parse::{HexMapParseError, hex_map_to_string, parse_hex_map_st
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use rustc_hash::FxHashMap;
+use strum::Display;
 use thiserror::Error;
+use crate::engine::row_col::{dimensions, RowColDimensions};
 
-#[derive(Debug, Clone, Eq, PartialEq, Copy, Ord, PartialOrd, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Copy, Ord, PartialOrd, Hash, Default, Display)]
 pub enum Color {
     Black,
+    #[default]
     White,
-}
-
-impl Display for Color {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Color::Black => {
-                write!(f, "B")
-            }
-            Color::White => {
-                write!(f, "W")
-            }
-        }
-    }
 }
 
 impl Color {
@@ -129,6 +119,10 @@ impl Hive {
             current = current + *direction;
         }
         current
+    }
+
+    pub fn row_col_dimensions(&self) -> RowColDimensions {
+        dimensions(self.map.keys())
     }
 }
 

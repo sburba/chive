@@ -1,7 +1,7 @@
 use std::ops;
 use strum::{EnumIter, IntoEnumIterator};
 
-#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Ord, PartialOrd)]
+#[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, Ord, PartialOrd, Default)]
 pub struct Hex {
     pub q: i32,
     pub r: i32,

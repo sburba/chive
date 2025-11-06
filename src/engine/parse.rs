@@ -1,6 +1,7 @@
 use crate::engine::hex::Hex;
 use crate::engine::parse::HexMapParseError::{InvalidHexContents, MissingLayerNumber};
-use std::cmp::{max, min};
+use crate::engine::row_col;
+use crate::engine::row_col::RowCol;
 use std::num::ParseIntError;
 use rustc_hash::FxHashMap;
 use thiserror::Error;
@@ -15,38 +16,8 @@ pub enum HexMapParseError {
     InvalidHexContents { contents: String },
 }
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq)]
-struct OddrCoordinate {
-    row: i32,
-    col: i32,
-    height: i32,
-}
-
-fn hex_to_oddr(hex: &Hex) -> OddrCoordinate {
-    let parity = hex.r & 1;
-    let col = hex.q + (hex.r - parity) / 2;
-    let row = hex.r;
-
-    OddrCoordinate {
-        col,
-        row,
-        height: hex.h,
-    }
-}
-
-fn oddr_to_hex(oddr: &OddrCoordinate) -> Hex {
-    let parity = oddr.row & 1;
-    let q = oddr.col - (oddr.row - parity) / 2;
-    let r = oddr.row;
-    Hex {
-        q,
-        r,
-        h: oddr.height,
-    }
-}
-
 pub fn parse_hex_map_string(s: &str) -> Result<FxHashMap<Hex, String>, HexMapParseError> {
-    let mut map = FxHashMap::default();
+    let mut map : FxHashMap<Hex, String> = FxHashMap::default();
     let rows = s.split("\n").map(|row| row.split_whitespace());
     let mut height = 0;
     let mut row_num = 0;
@@ -65,11 +36,11 @@ pub fn parse_hex_map_string(s: &str) -> Result<FxHashMap<Hex, String>, HexMapPar
                 }
                 token if token.len() == 1 => {
                     should_increment_row = true;
-                    let hex = oddr_to_hex(&OddrCoordinate {
+                    let hex = RowCol {
                         row: row_num,
                         col: col_num,
                         height,
-                    });
+                    }.to_hex();
                     map.insert(hex, token.to_string());
                 }
                 contents => {
@@ -87,16 +58,6 @@ pub fn parse_hex_map_string(s: &str) -> Result<FxHashMap<Hex, String>, HexMapPar
     Ok(map)
 }
 
-#[derive(Default)]
-struct HexMapDimensions {
-    row_min: i32,
-    row_max: i32,
-    col_min: i32,
-    col_max: i32,
-    height_min: i32,
-    height_max: i32,
-}
-
 pub fn hex_map_to_string(hex_map: &FxHashMap<Hex, String>) -> String {
     if hex_map.is_empty() {
         return "<empty>".to_owned();
@@ -106,19 +67,7 @@ pub fn hex_map_to_string(hex_map: &FxHashMap<Hex, String>) -> String {
         return hex_map.iter().next().unwrap().1.clone();
     }
 
-    let dimensions = hex_map
-        .iter()
-        .fold(Default::default(), |dims: HexMapDimensions, (hex, _)| {
-            let oddr = hex_to_oddr(hex);
-            HexMapDimensions {
-                row_min: min(dims.row_min, oddr.row),
-                row_max: max(dims.row_max, oddr.row),
-                col_min: min(dims.col_min, oddr.col),
-                col_max: max(dims.col_max, oddr.col),
-                height_min: min(dims.height_min, oddr.height),
-                height_max: max(dims.height_max, oddr.height),
-            }
-        });
+    let dimensions = row_col::dimensions(hex_map.keys());
 
     let mut map_str = String::new();
     for height in dimensions.height_min..=dimensions.height_max {
@@ -134,7 +83,7 @@ pub fn hex_map_to_string(hex_map: &FxHashMap<Hex, String>) -> String {
             for col in dimensions.col_min..=dimensions.col_max {
                 let default = ".".to_string();
                 let token = hex_map
-                    .get(&oddr_to_hex(&OddrCoordinate { row, col, height }))
+                    .get(&RowCol { row, col, height }.to_hex())
                     .unwrap_or(&default);
                 map_str.push_str(&format!(" {} ", token));
             }

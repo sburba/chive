@@ -38,10 +38,18 @@ impl minimax::Game for HiveGame {
 
 #[derive(Clone)]
 pub struct PiecesAroundQueenAndAvailableMoves {
-    pub piece_around_queen_cost: i16,
-    pub available_move_cost: i16,
+    pub piece_around_queen_value: i16,
+    pub available_move_value: i16,
 }
 
+impl Default for PiecesAroundQueenAndAvailableMoves {
+    fn default() -> Self {
+        Self {
+            piece_around_queen_value: 100,
+            available_move_value: 1,
+        }
+    }
+}
 impl Evaluator for PiecesAroundQueenAndAvailableMoves {
     type G = HiveGame;
 
@@ -64,7 +72,7 @@ impl Evaluator for PiecesAroundQueenAndAvailableMoves {
         let active_player_pieces_around_queen = *statuses.get(&s.active_player).unwrap_or(&0);
         let active_player_available_moves = s.valid_turns().len() as i16;
         (inactive_player_pieces_around_queen - active_player_pieces_around_queen)
-            * self.piece_around_queen_cost
-            + active_player_available_moves * self.available_move_cost
+            * self.piece_around_queen_value
+            + active_player_available_moves * self.available_move_value
     }
 }

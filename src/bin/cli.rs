@@ -19,8 +19,8 @@ fn main() {
     println!("{}", start.hive);
     let mut strategy = minimax::ParallelSearch::new(
         PiecesAroundQueenAndAvailableMoves {
-            piece_around_queen_cost: 100,
-            available_move_cost: 1,
+            piece_around_queen_value: 100,
+            available_move_value: 1,
         },
         IterativeOptions::new(),
         ParallelOptions::new(),
@@ -29,7 +29,7 @@ fn main() {
     let mut game = start;
     while let Some(best_move) = strategy.choose_move(&game) {
         game = game.with_turn_applied(best_move);
-        println!("{:?}", game.hive);
+        println!("{}", game.hive);
     }
-    println!("{:?}", game.hive);
+    println!("{}", game.hive);
 }
