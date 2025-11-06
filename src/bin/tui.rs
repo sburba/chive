@@ -1,13 +1,12 @@
 use crate::AppError::AiError;
-use chive::engine::ai::PiecesAroundQueenAndAvailableMoves;
+use chive::engine::ai::Ai;
 use chive::engine::bug::Bug;
 use chive::engine::game::{Game, GameResult, Turn};
 use chive::engine::hex::Hex;
 use chive::engine::hive::{Color, Tile};
-use chive::engine::row_col;
 use chive::engine::row_col::{RowCol, RowColDimensions};
+use chive::engine::{ai, row_col};
 use itertools::Itertools;
-use minimax::{IterativeOptions, ParallelOptions, ParallelSearch, Strategy};
 use ratatui::crossterm::event;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -22,13 +21,11 @@ use thiserror::Error;
 
 struct App {
     game: Game,
-    ai: ParallelSearch<PiecesAroundQueenAndAvailableMoves>,
+    ai: Ai,
     cursor_pos: RowCol,
     player_color: Color,
     selected_pos: Option<RowCol>,
     last_ai_move_pos: Option<RowCol>,
-    default_ai_ponder_time: Duration,
-    max_ai_ponder_time: Duration,
 }
 
 #[derive(Error, Debug)]
@@ -36,7 +33,7 @@ pub enum AppError {
     #[error("Failed to interact with terminal")]
     IoError(#[from] io::Error),
     #[error("AI Failed to find a valid move")]
-    AiError(String),
+    AiError(#[from] ai::AiError),
 }
 
 fn tile_to_span<'a>(tile: Tile) -> Span<'a> {
@@ -67,6 +64,10 @@ impl App {
         }
     }
 
+    fn board_string(&self) -> String {
+        self.game.hive.to_string()
+    }
+
     fn game_result(&self) -> Option<String> {
         match self.game.game_result() {
             GameResult::None => None,
@@ -75,27 +76,14 @@ impl App {
         }
     }
 
-    fn choose_turn(&mut self) -> Result<Turn, AppError> {
-        self.ai.set_timeout(self.default_ai_ponder_time);
-        if let Some(turn) = self.ai.choose_move(&self.game) {
-            Ok(turn)
-        } else {
-            self.ai
-                .set_timeout(self.default_ai_ponder_time - self.max_ai_ponder_time);
-            self.ai
-                .choose_move(&self.game)
-                .ok_or_else(|| AiError(self.game.hive.to_string()))
-        }
-    }
-
-    fn run(mut self, mut terminal: DefaultTerminal) -> Result<String, AppError> {
+    fn run(&mut self, mut terminal: DefaultTerminal) -> Result<String, AppError> {
         loop {
             if let Some(result) = self.game_result() {
                 return Ok(result);
             }
             terminal.draw(|frame| self.draw(frame))?;
             if self.game.active_player != self.player_color {
-                let turn = self.choose_turn()?;
+                let turn = self.ai.choose_turn(&self.game)?;
                 self.last_ai_move_pos = self.last_affected_row_col(&turn);
                 self.game = self.game.with_turn_applied(turn);
                 if let Some(result) = self.game_result() {
@@ -332,23 +320,13 @@ impl App {
 
 fn main() {
     let terminal = ratatui::init();
-    let strategy = ParallelSearch::new(
-        PiecesAroundQueenAndAvailableMoves {
-            piece_around_queen_value: 100,
-            available_move_value: 1,
-        },
-        IterativeOptions::new(),
-        ParallelOptions::new().with_background_pondering(),
-    );
-    let app = App {
+    let mut app = App {
         game: Default::default(),
-        ai: strategy,
+        ai: Ai::new(Duration::from_millis(200), Duration::from_secs(15)),
         cursor_pos: Default::default(),
         player_color: Default::default(),
         selected_pos: None,
         last_ai_move_pos: None,
-        default_ai_ponder_time: Duration::from_millis(15),
-        max_ai_ponder_time: Duration::from_secs(15),
     };
     let result = app.run(terminal);
     ratatui::restore();
@@ -356,12 +334,13 @@ fn main() {
         Ok(final_board_state) => {
             println!("{}", final_board_state);
         }
-        Err(AiError(final_board_state)) => {
+        Err(AiError(_)) => {
             println!("AI Failed to find move in time :(");
-            println!("{}", final_board_state);
+            println!("{}", app.board_string());
         }
         _ => {
-            println!("{:?}", result)
+            println!("{:?}", result);
+            println!("{}", app.board_string());
         }
     }
 }

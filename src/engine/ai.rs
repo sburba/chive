@@ -1,9 +1,54 @@
-use minimax::{Evaluation, Evaluator, Winner};
-use rustc_hash::FxHashMap;
 use crate::engine::bug::Bug;
 use crate::engine::game::{Game, GameResult, Turn};
+use minimax::{
+    Evaluation, Evaluator, IterativeOptions, ParallelOptions, ParallelSearch, Strategy, Winner,
+};
+use rustc_hash::FxHashMap;
+use std::time::Duration;
+use strum::Display;
+use thiserror::Error;
+use AiError::RanOutOfTime;
 
-pub struct HiveGame;
+#[derive(Error, Debug, Display)]
+pub enum AiError {
+    RanOutOfTime,
+}
+
+pub struct Ai {
+    default_pondering_time: Duration,
+    max_pondering_time: Duration,
+    strategy: ParallelSearch<PiecesAroundQueenAndAvailableMoves>,
+}
+
+impl Ai {
+    pub fn new(default_pondering_time: Duration, max_pondering_time: Duration) -> Ai {
+        Ai {
+            default_pondering_time,
+            max_pondering_time,
+            strategy: ParallelSearch::new(
+                PiecesAroundQueenAndAvailableMoves {
+                    piece_around_queen_value: 100,
+                    available_move_value: 1,
+                },
+                IterativeOptions::new(),
+                ParallelOptions::new(),
+            ),
+        }
+    }
+
+    pub fn choose_turn(&mut self, game: &Game) -> Result<Turn, AiError> {
+        self.strategy.set_timeout(self.default_pondering_time);
+        if let Some(turn) = self.strategy.choose_move(game) {
+            Ok(turn)
+        } else {
+            self.strategy
+                .set_timeout(self.default_pondering_time - self.max_pondering_time);
+            self.strategy.choose_move(game).ok_or(RanOutOfTime)
+        }
+    }
+}
+
+struct HiveGame;
 
 impl minimax::Game for HiveGame {
     type S = Game;
@@ -37,7 +82,7 @@ impl minimax::Game for HiveGame {
 }
 
 #[derive(Clone)]
-pub struct PiecesAroundQueenAndAvailableMoves {
+struct PiecesAroundQueenAndAvailableMoves {
     pub piece_around_queen_value: i16,
     pub available_move_value: i16,
 }
