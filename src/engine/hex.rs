@@ -12,6 +12,12 @@ impl Hex {
     pub fn s(&self) -> i32 {
         self.q + self.r
     }
+    pub fn base_level(&self) -> Hex {
+        Hex {
+            h: 0,
+            ..*self
+        }
+    }
 }
 
 impl ops::Add<Hex> for Hex {

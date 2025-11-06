@@ -2,6 +2,7 @@ use crate::AppError::AiError;
 use chive::engine::ai::PiecesAroundQueenAndAvailableMoves;
 use chive::engine::bug::Bug;
 use chive::engine::game::{Game, GameResult, Turn};
+use chive::engine::hex::Hex;
 use chive::engine::hive::{Color, Tile};
 use chive::engine::row_col;
 use chive::engine::row_col::{RowCol, RowColDimensions};
@@ -25,7 +26,6 @@ struct App {
     cursor_pos: RowCol,
     player_color: Color,
     selected_piece: Option<RowCol>,
-    active_height: i32,
 }
 
 #[derive(Error, Debug)]
@@ -34,6 +34,14 @@ pub enum AppError {
     IoError(#[from] io::Error),
     #[error("AI Failed to find a valid move")]
     AiError(String),
+}
+
+fn tile_to_text<'a>(tile: Tile) -> Text<'a> {
+    if tile.color == Color::White {
+        Text::raw(tile.to_string()).black().on_white()
+    } else {
+        Text::raw(tile.to_string()).white().on_black()
+    }
 }
 
 impl App {
@@ -120,14 +128,27 @@ impl App {
                         ..
                     } => {
                         if !self.selected_piece.is_some() {
-                            self.selected_piece = Some(self.cursor_pos)
+                            self.selected_piece = self
+                                .game
+                                .hive
+                                .topmost_occupied_hex(&self.cursor_pos.to_hex())
+                                .filter(|hex| {
+                                    self.game
+                                        .hive
+                                        .tile_at(hex)
+                                        .is_some_and(|tile| tile.color == self.player_color)
+                                })
+                                .map(|hex: Hex| RowCol::from_hex(&hex))
                         } else {
                             if self.selected_piece == Some(self.cursor_pos) {
                                 self.selected_piece = None;
                             } else {
                                 let turn = Turn::Move {
                                     from: self.selected_piece.unwrap().to_hex(),
-                                    to: self.cursor_pos.to_hex(),
+                                    to: self
+                                        .game
+                                        .hive
+                                        .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
                                 };
                                 if self.game.turn_is_valid(turn) {
                                     self.game = self.game.with_turn_applied(turn);
@@ -135,26 +156,6 @@ impl App {
                                 }
                             }
                         }
-                    }
-                    KeyEvent {
-                        code: KeyCode::PageUp,
-                        ..
-                    } => {
-                        self.active_height = (self.active_height + 1).clamp(0, dims.height_max);
-                        self.cursor_pos = RowCol {
-                            height: self.active_height,
-                            ..self.cursor_pos
-                        };
-                    }
-                    KeyEvent {
-                        code: KeyCode::PageDown,
-                        ..
-                    } => {
-                        self.active_height = (self.active_height - 1).clamp(0, dims.height_max);
-                        self.cursor_pos = RowCol {
-                            height: self.active_height,
-                            ..self.cursor_pos
-                        };
                     }
                     KeyEvent {
                         code: KeyCode::End, ..
@@ -264,7 +265,7 @@ impl App {
         let starred_locations = if let Some(piece) = self.selected_piece {
             self.game
                 .valid_destinations_for_piece(&piece.to_hex())
-                .map(|hex| RowCol::from_hex(&hex))
+                .map(|hex| RowCol::from_hex(&Hex { h: 0, ..hex }))
                 .collect()
         } else {
             FxHashSet::default()
@@ -279,7 +280,7 @@ impl App {
             let row_col = RowCol {
                 row,
                 col,
-                height: self.active_height,
+                height: 0,
             };
             let hex = row_col.to_hex();
 
@@ -287,30 +288,22 @@ impl App {
                 frame.set_cursor_position(cell)
             }
 
-            if starred_locations.contains(&row_col) {
-                frame.render_widget("*", cell);
-            } else {
-                let mut text = self
-                    .game
-                    .hive
-                    .map
-                    .get(&hex)
-                    .map(|t| {
-                        if t.color == Color::White {
-                            Text::raw(t.to_string()).black().on_white()
-                        } else {
-                            Text::raw(t.to_string()).white().on_black()
-                        }
-                    })
-                    .unwrap_or(default.clone());
-                if Some(row_col) == self.selected_piece {
-                    text = text.slow_blink();
-                }
-                if self.game.hive.stack_height(&hex) > 1 {
-                    text = text.underlined()
-                }
-                frame.render_widget(text, cell);
+            let mut text = self
+                .game
+                .hive
+                .top_tile_at(&hex)
+                .map(tile_to_text)
+                .unwrap_or(default.clone());
+            if Some(row_col) == self.selected_piece {
+                text = text.slow_blink();
             }
+            if self.game.hive.stack_height(&hex) > 1 {
+                text = text.underlined()
+            }
+            if starred_locations.contains(&row_col) {
+                text = text.on_green();
+            }
+            frame.render_widget(text, cell);
         }
     }
 }
@@ -332,7 +325,6 @@ fn main() {
         cursor_pos: Default::default(),
         player_color: Default::default(),
         selected_piece: None,
-        active_height: 0,
     };
     let result = app.run(terminal);
     ratatui::restore();
