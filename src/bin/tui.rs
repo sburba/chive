@@ -25,7 +25,10 @@ struct App {
     ai: ParallelSearch<PiecesAroundQueenAndAvailableMoves>,
     cursor_pos: RowCol,
     player_color: Color,
-    selected_piece: Option<RowCol>,
+    selected_pos: Option<RowCol>,
+    last_ai_move_pos: Option<RowCol>,
+    default_ai_ponder_time: Duration,
+    max_ai_ponder_time: Duration,
 }
 
 #[derive(Error, Debug)]
@@ -45,6 +48,13 @@ fn tile_to_text<'a>(tile: Tile) -> Text<'a> {
 }
 
 impl App {
+    fn last_affected_row_col(&self, turn: &Turn) -> Option<RowCol> {
+        match turn {
+            Turn::Placement { hex, tile: _ } => Some(RowCol::from_hex(&hex)),
+            Turn::Move { from: _, to } => Some(RowCol::from_hex(&to)),
+            Turn::Skip => self.last_ai_move_pos,
+        }
+    }
     fn board_dimensions(&self) -> RowColDimensions {
         let map_dimensions = row_col::dimensions(self.game.hive.to_hex_map().keys());
         RowColDimensions {
@@ -65,6 +75,22 @@ impl App {
         }
     }
 
+    fn choose_turn(&mut self) -> Result<Turn, AppError> {
+        self.ai.set_timeout(self.default_ai_ponder_time);
+        if let Some(turn) = self.ai.choose_move(&self.game) {
+            Ok(turn)
+        } else {
+            self.ai
+                .set_timeout(self.default_ai_ponder_time - self.max_ai_ponder_time);
+            let turn = self.ai.choose_move(&self.game);
+            if turn.is_none() {
+                Err(AiError(self.game.hive.to_string()))
+            } else {
+                Ok(turn.unwrap())
+            }
+        }
+    }
+
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<String, AppError> {
         loop {
             if let Some(result) = self.game_result() {
@@ -72,22 +98,15 @@ impl App {
             }
             terminal.draw(|frame| self.draw(frame))?;
             if self.game.active_player != self.player_color {
-                if let Some(turn) = self.ai.choose_move(&self.game) {
-                    self.game = self.game.with_turn_applied(turn);
-                    if let Some(result) = self.game_result() {
-                        return Ok(result);
-                    }
-                } else {
-                    self.ai.set_timeout(Duration::from_secs(10));
-                    let turn = self.ai.choose_move(&self.game).unwrap();
-                    self.ai.set_timeout(Duration::from_millis(15));
-                    self.game = self.game.with_turn_applied(turn);
-                    if let Some(result) = self.game_result() {
-                        return Ok(result);
-                    }
+                let turn = self.choose_turn()?;
+                self.last_ai_move_pos = self.last_affected_row_col(&turn);
+                self.game = self.game.with_turn_applied(turn);
+                if let Some(result) = self.game_result() {
+                    return Ok(result);
                 }
                 terminal.draw(|frame| self.draw(frame))?;
             }
+
             let dims = self.board_dimensions();
             if let Some(key) = event::read()?.as_key_press_event() {
                 match key {
@@ -122,14 +141,14 @@ impl App {
                     KeyEvent {
                         code: KeyCode::Esc, ..
                     } => {
-                        self.selected_piece = None;
+                        self.selected_pos = None;
                     }
                     KeyEvent {
                         code: KeyCode::Enter,
                         ..
                     } => {
-                        if !self.selected_piece.is_some() {
-                            self.selected_piece = self
+                        if !self.selected_pos.is_some() {
+                            self.selected_pos = self
                                 .game
                                 .hive
                                 .topmost_occupied_hex(&self.cursor_pos.to_hex())
@@ -141,11 +160,11 @@ impl App {
                                 })
                                 .map(|hex: Hex| RowCol::from_hex(&hex))
                         } else {
-                            if self.selected_piece == Some(self.cursor_pos) {
-                                self.selected_piece = None;
+                            if self.selected_pos == Some(self.cursor_pos) {
+                                self.selected_pos = None;
                             } else {
                                 let turn = Turn::Move {
-                                    from: self.selected_piece.unwrap().to_hex(),
+                                    from: self.selected_pos.unwrap().to_hex(),
                                     to: self
                                         .game
                                         .hive
@@ -153,7 +172,7 @@ impl App {
                                 };
                                 if self.game.turn_is_valid(turn) {
                                     self.game = self.game.with_turn_applied(turn);
-                                    self.selected_piece = None
+                                    self.selected_pos = None
                                 }
                             }
                         }
@@ -263,7 +282,7 @@ impl App {
                 }
             });
 
-        let starred_locations = if let Some(piece) = self.selected_piece {
+        let valid_move_positions = if let Some(piece) = self.selected_pos {
             self.game
                 .valid_destinations_for_piece(&piece.to_hex())
                 .map(|hex| RowCol::from_hex(&Hex { h: 0, ..hex }))
@@ -295,14 +314,16 @@ impl App {
                 .top_tile_at(&hex)
                 .map(tile_to_text)
                 .unwrap_or(default.clone());
-            if Some(row_col) == self.selected_piece {
+            if Some(row_col) == self.selected_pos {
                 text = text.slow_blink();
             }
             if self.game.hive.stack_height(&hex) > 1 {
                 text = text.underlined()
             }
-            if starred_locations.contains(&row_col) {
+            if valid_move_positions.contains(&row_col) {
                 text = text.on_green();
+            } else if Some(row_col) == self.last_ai_move_pos {
+                text = text.on_magenta()
             }
             frame.render_widget(text, cell);
         }
@@ -311,7 +332,7 @@ impl App {
 
 fn main() {
     let terminal = ratatui::init();
-    let mut strategy = ParallelSearch::new(
+    let strategy = ParallelSearch::new(
         PiecesAroundQueenAndAvailableMoves {
             piece_around_queen_value: 100,
             available_move_value: 1,
@@ -319,13 +340,15 @@ fn main() {
         IterativeOptions::new(),
         ParallelOptions::new().with_background_pondering(),
     );
-    strategy.set_timeout(Duration::from_millis(15));
     let app = App {
         game: Default::default(),
         ai: strategy,
         cursor_pos: Default::default(),
         player_color: Default::default(),
-        selected_piece: None,
+        selected_pos: None,
+        last_ai_move_pos: None,
+        default_ai_ponder_time: Duration::from_millis(15),
+        max_ai_ponder_time: Duration::from_secs(15),
     };
     let result = app.run(terminal);
     ratatui::restore();
