@@ -357,6 +357,7 @@ fn main() {
             println!("{}", final_board_state);
         }
         Err(AiError(final_board_state)) => {
+            println!("AI Failed to find move in time :(");
             println!("{}", final_board_state);
         }
         _ => {
