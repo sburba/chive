@@ -320,9 +320,10 @@ impl App {
 
 fn main() {
     let terminal = ratatui::init();
+    let pondering_time = Duration::from_secs(5);
     let mut app = App {
         game: Default::default(),
-        ai: Ai::new(Duration::from_millis(200), Duration::from_secs(15)),
+        ai: Ai::new(pondering_time, pondering_time * 3),
         cursor_pos: Default::default(),
         player_color: Default::default(),
         selected_pos: None,
