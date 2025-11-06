@@ -92,27 +92,28 @@ impl App {
             if let Some(key) = event::read()?.as_key_press_event() {
                 match key {
                     KeyEvent {
-                        code: KeyCode::Left,
+                        code: KeyCode::Left | KeyCode::Char('h'),
                         ..
                     } => {
                         self.cursor_pos.col =
                             (self.cursor_pos.col - 1).clamp(dims.col_min, dims.col_max);
                     }
                     KeyEvent {
-                        code: KeyCode::Right,
+                        code: KeyCode::Right | KeyCode::Char('l'),
                         ..
                     } => {
                         self.cursor_pos.col =
                             (self.cursor_pos.col + 1).clamp(dims.col_min, dims.col_max);
                     }
                     KeyEvent {
-                        code: KeyCode::Up, ..
+                        code: KeyCode::Up | KeyCode::Char('k'),
+                        ..
                     } => {
                         self.cursor_pos.row =
                             (self.cursor_pos.row - 1).clamp(dims.row_min, dims.row_max);
                     }
                     KeyEvent {
-                        code: KeyCode::Down,
+                        code: KeyCode::Down | KeyCode::Char('j'),
                         ..
                     } => {
                         self.cursor_pos.row =
