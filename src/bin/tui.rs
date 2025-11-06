@@ -50,8 +50,8 @@ fn tile_to_text<'a>(tile: Tile) -> Text<'a> {
 impl App {
     fn last_affected_row_col(&self, turn: &Turn) -> Option<RowCol> {
         match turn {
-            Turn::Placement { hex, tile: _ } => Some(RowCol::from_hex(&hex)),
-            Turn::Move { from: _, to } => Some(RowCol::from_hex(&to)),
+            Turn::Placement { hex, tile: _ } => Some(RowCol::from_hex(hex)),
+            Turn::Move { from: _, to } => Some(RowCol::from_hex(to)),
             Turn::Skip => self.last_ai_move_pos,
         }
     }
@@ -82,12 +82,9 @@ impl App {
         } else {
             self.ai
                 .set_timeout(self.default_ai_ponder_time - self.max_ai_ponder_time);
-            let turn = self.ai.choose_move(&self.game);
-            if turn.is_none() {
-                Err(AiError(self.game.hive.to_string()))
-            } else {
-                Ok(turn.unwrap())
-            }
+            self.ai
+                .choose_move(&self.game)
+                .ok_or_else(|| AiError(self.game.hive.to_string()))
         }
     }
 
@@ -147,7 +144,7 @@ impl App {
                         code: KeyCode::Enter,
                         ..
                     } => {
-                        if !self.selected_pos.is_some() {
+                        if self.selected_pos.is_none() {
                             self.selected_pos = self
                                 .game
                                 .hive
@@ -159,21 +156,19 @@ impl App {
                                         .is_some_and(|tile| tile.color == self.player_color)
                                 })
                                 .map(|hex: Hex| RowCol::from_hex(&hex))
+                        } else if self.selected_pos == Some(self.cursor_pos) {
+                            self.selected_pos = None;
                         } else {
-                            if self.selected_pos == Some(self.cursor_pos) {
-                                self.selected_pos = None;
-                            } else {
-                                let turn = Turn::Move {
-                                    from: self.selected_pos.unwrap().to_hex(),
-                                    to: self
-                                        .game
-                                        .hive
-                                        .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
-                                };
-                                if self.game.turn_is_valid(turn) {
-                                    self.game = self.game.with_turn_applied(turn);
-                                    self.selected_pos = None
-                                }
+                            let turn = Turn::Move {
+                                from: self.selected_pos.unwrap().to_hex(),
+                                to: self
+                                    .game
+                                    .hive
+                                    .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
+                            };
+                            if self.game.turn_is_valid(turn) {
+                                self.game = self.game.with_turn_applied(turn);
+                                self.selected_pos = None
                             }
                         }
                     }

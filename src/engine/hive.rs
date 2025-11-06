@@ -73,11 +73,11 @@ impl Hive {
     }
 
     pub fn top_tile_at(&self, hex: &Hex) -> Option<Tile> {
-        self.topmost_occupied_hex(hex).and_then(|hex| self.map.get(&hex)).map(|tile| *tile)
+        self.topmost_occupied_hex(hex).and_then(|hex| self.map.get(&hex)).copied()
     }
 
     pub fn tile_at(&self, hex: &Hex) -> Option<Tile> {
-        self.map.get(hex).map(|tile| *tile)
+        self.map.get(hex).copied()
     }
 
     pub fn stack_height(&self, hex: &Hex) -> i32 {

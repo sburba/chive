@@ -39,9 +39,9 @@ impl From<&Hex> for RowCol {
     }
 }
 
-impl Into<Hex> for RowCol {
-    fn into(self) -> Hex {
-        self.to_hex()
+impl From<RowCol> for Hex {
+    fn from(val: RowCol) -> Self {
+        val.to_hex()
     }
 }
 

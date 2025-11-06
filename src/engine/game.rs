@@ -65,7 +65,7 @@ impl Default for Game {
 impl Game {
     pub fn turn_is_valid(&self, turn: Turn) -> bool {
         //TODO: This is a really slow way to implement this
-        self.valid_turns().iter().any(|t| *t == turn)
+        self.valid_turns().contains(&turn)
     }
 
     pub fn from_hive(hive: Hive, active_player: Color) -> Game {
