@@ -65,6 +65,7 @@ impl App {
             if let Some(result) = self.game_result() {
                 return Ok(result);
             }
+            terminal.draw(|frame| self.draw(frame))?;
             if self.game.active_player != self.player_color {
                 if let Some(turn) = self.ai.choose_move(&self.game) {
                     self.game = self.game.with_turn_applied(turn);
@@ -80,9 +81,9 @@ impl App {
                         return Ok(result);
                     }
                 }
+                terminal.draw(|frame| self.draw(frame))?;
             }
             let dims = self.board_dimensions();
-            terminal.draw(|frame| self.draw(frame))?;
             if let Some(key) = event::read()?.as_key_press_event() {
                 match key {
                     KeyEvent {
@@ -187,7 +188,6 @@ impl App {
 
     fn draw_map(&self, frame: &mut Frame, area: &Rect) {
         // When you select a piece highlight the valid moves
-        // Show reserve pieces
         let hex_map = self.game.hive.to_hex_map();
         let map_dimensions = row_col::dimensions(hex_map.keys());
         let board_dimensions = self.board_dimensions();
