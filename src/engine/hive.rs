@@ -92,6 +92,19 @@ impl Hive {
         }
     }
 
+    pub fn stack_at(&self, hex: &Hex) -> impl Iterator<Item = &Tile> {
+        let mut topmost_tile = self.map.get(&Hex{h: 0, ..*hex});
+        let mut height = 0;
+        let mut stack = vec![];
+        while let Some(new_tile) = topmost_tile {
+            stack.push(new_tile);
+            height += 1;
+            topmost_tile = self.map.get(&Hex{h: height, ..*hex});
+        }
+
+        stack.into_iter()
+    }
+
     pub fn neighbors_at_same_level(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
         neighbors(hex)
     }

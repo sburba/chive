@@ -1,23 +1,23 @@
+use crate::AppError::AiError;
 use chive::engine::ai::PiecesAroundQueenAndAvailableMoves;
 use chive::engine::bug::Bug;
 use chive::engine::game::{Game, GameResult, Turn};
 use chive::engine::hive::{Color, Tile};
 use chive::engine::row_col;
 use chive::engine::row_col::{RowCol, RowColDimensions};
+use itertools::Itertools;
 use minimax::{IterativeOptions, ParallelOptions, ParallelSearch, Strategy};
 use ratatui::crossterm::event;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::text::Text;
-use ratatui::{DefaultTerminal, Frame};
-use std::io;
-use std::time::Duration;
-use itertools::Itertools;
 use ratatui::prelude::Direction;
 use ratatui::style::Stylize;
+use ratatui::text::{Line, Span, Text};
+use ratatui::{DefaultTerminal, Frame};
 use rustc_hash::FxHashSet;
+use std::io;
+use std::time::Duration;
 use thiserror::Error;
-use crate::AppError::AiError;
 
 struct App {
     game: Game,
@@ -33,7 +33,7 @@ pub enum AppError {
     #[error("Failed to interact with terminal")]
     IoError(#[from] io::Error),
     #[error("AI Failed to find a valid move")]
-    AiError(String)
+    AiError(String),
 }
 
 impl App {
@@ -51,13 +51,9 @@ impl App {
 
     fn game_result(&self) -> Option<String> {
         match self.game.game_result() {
-            GameResult::None => {None}
-            GameResult::Draw => {
-                Some(format!("Draw!\n{}", self.game.hive))
-            }
-            GameResult::Winner { color } => {
-                Some(format!("{} Won!\n{}", color, self.game.hive))
-            }
+            GameResult::None => None,
+            GameResult::Draw => Some(format!("Draw!\n{}", self.game.hive)),
+            GameResult::Winner { color } => Some(format!("{} Won!\n{}", color, self.game.hive)),
         }
     }
 
@@ -113,14 +109,15 @@ impl App {
                     } => {
                         self.cursor_pos.row =
                             (self.cursor_pos.row + 1).clamp(dims.row_min, dims.row_max);
-                    },
+                    }
                     KeyEvent {
                         code: KeyCode::Esc, ..
                     } => {
                         self.selected_piece = None;
                     }
                     KeyEvent {
-                        code: KeyCode::Enter, ..
+                        code: KeyCode::Enter,
+                        ..
                     } => {
                         if !self.selected_piece.is_some() {
                             self.selected_piece = Some(self.cursor_pos)
@@ -128,7 +125,10 @@ impl App {
                             if self.selected_piece == Some(self.cursor_pos) {
                                 self.selected_piece = None;
                             } else {
-                                let turn = Turn::Move {from: self.selected_piece.unwrap().to_hex(), to: self.cursor_pos.to_hex()};
+                                let turn = Turn::Move {
+                                    from: self.selected_piece.unwrap().to_hex(),
+                                    to: self.cursor_pos.to_hex(),
+                                };
                                 if self.game.turn_is_valid(turn) {
                                     self.game = self.game.with_turn_applied(turn);
                                     self.selected_piece = None
@@ -136,13 +136,25 @@ impl App {
                             }
                         }
                     }
-                    KeyEvent { code: KeyCode::PageUp, ..} => {
+                    KeyEvent {
+                        code: KeyCode::PageUp,
+                        ..
+                    } => {
                         self.active_height = (self.active_height + 1).clamp(0, dims.height_max);
-                        self.cursor_pos = RowCol {height: self.active_height, ..self.cursor_pos};
+                        self.cursor_pos = RowCol {
+                            height: self.active_height,
+                            ..self.cursor_pos
+                        };
                     }
-                    KeyEvent { code: KeyCode::PageDown, ..} => {
+                    KeyEvent {
+                        code: KeyCode::PageDown,
+                        ..
+                    } => {
                         self.active_height = (self.active_height - 1).clamp(0, dims.height_max);
-                        self.cursor_pos = RowCol {height: self.active_height, ..self.cursor_pos};
+                        self.cursor_pos = RowCol {
+                            height: self.active_height,
+                            ..self.cursor_pos
+                        };
                     }
                     KeyEvent {
                         code: KeyCode::End, ..
@@ -177,14 +189,51 @@ impl App {
     fn draw(&self, frame: &mut Frame) {
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(1), Constraint::Length(1), Constraint::Min(3)])
+            .constraints(vec![
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(3),
+            ])
             .split(frame.area());
 
-        let white_pieces = self.game.white_reserve.iter().map(|b| b.to_string()).join(", ");
-        let black_pieces = self.game.black_reserve.iter().map(|b| b.to_string()).join(", ");
-        frame.render_widget(Text::raw(format!("White Reserve: {white_pieces}")), layout[0]);
-        frame.render_widget(Text::raw(format!("Black Reserve: {black_pieces}")), layout[1]);
-        self.draw_map(frame, &layout[2])
+        let white_pieces = self
+            .game
+            .white_reserve
+            .iter()
+            .map(|b| b.to_string())
+            .join(", ");
+        let black_pieces = self
+            .game
+            .black_reserve
+            .iter()
+            .map(|b| b.to_string())
+            .join(", ");
+        frame.render_widget(
+            Text::raw(format!("White Reserve: {white_pieces}")),
+            layout[0],
+        );
+        frame.render_widget(
+            Text::raw(format!("Black Reserve: {black_pieces}")),
+            layout[1],
+        );
+        let cursor_hex_pos = self.cursor_pos.to_hex();
+
+        let mut spans: Vec<Span> = vec![Span::raw("Stack: ")];
+        for (i, tile) in self.game.hive.stack_at(&cursor_hex_pos).enumerate() {
+            if tile.color == Color::White {
+                spans.push(Span::raw(tile.to_string()).black().on_white())
+            } else {
+                spans.push(Span::raw(tile.to_string()).white().on_black())
+            }
+
+            if i % 2 == 0 {
+                spans.push(Span::raw(" "));
+            }
+        }
+        let stack_text = Line::from(spans);
+        frame.render_widget(stack_text, layout[2]);
+        self.draw_map(frame, &layout[3])
     }
 
     fn draw_map(&self, frame: &mut Frame, area: &Rect) {
@@ -213,7 +262,10 @@ impl App {
             });
 
         let starred_locations = if let Some(piece) = self.selected_piece {
-            self.game.valid_destinations_for_piece(&piece.to_hex()).map(|hex| RowCol::from_hex(&hex)).collect()
+            self.game
+                .valid_destinations_for_piece(&piece.to_hex())
+                .map(|hex| RowCol::from_hex(&hex))
+                .collect()
         } else {
             FxHashSet::default()
         };
@@ -224,7 +276,11 @@ impl App {
             let visual_col = (i as i32 % board_dimensions.width()) - 1;
             let row = map_dimensions.row_min + visual_row;
             let col = map_dimensions.col_min + visual_col;
-            let row_col = RowCol {row, col, height: self.active_height};
+            let row_col = RowCol {
+                row,
+                col,
+                height: self.active_height,
+            };
             let hex = row_col.to_hex();
 
             if self.cursor_pos == row_col {
@@ -234,15 +290,24 @@ impl App {
             if starred_locations.contains(&row_col) {
                 frame.render_widget("*", cell);
             } else {
-                let mut text = self.game.hive.map.get(&hex).map(|t| {
-                    if t.color == Color::White {
-                        Text::raw(t.to_string()).black().on_white()
-                    } else {
-                        Text::raw(t.to_string()).white().on_black()
-                    }
-                }).unwrap_or(default.clone());
+                let mut text = self
+                    .game
+                    .hive
+                    .map
+                    .get(&hex)
+                    .map(|t| {
+                        if t.color == Color::White {
+                            Text::raw(t.to_string()).black().on_white()
+                        } else {
+                            Text::raw(t.to_string()).white().on_black()
+                        }
+                    })
+                    .unwrap_or(default.clone());
                 if Some(row_col) == self.selected_piece {
-                    text = text.underlined();
+                    text = text.slow_blink();
+                }
+                if self.game.hive.stack_height(&hex) > 1 {
+                    text = text.underlined()
                 }
                 frame.render_widget(text, cell);
             }
@@ -267,7 +332,7 @@ fn main() {
         cursor_pos: Default::default(),
         player_color: Default::default(),
         selected_piece: None,
-        active_height: 0
+        active_height: 0,
     };
     let result = app.run(terminal);
     ratatui::restore();
@@ -278,6 +343,8 @@ fn main() {
         Err(AiError(final_board_state)) => {
             println!("{}", final_board_state);
         }
-        _ => {println!("{:?}", result)}
+        _ => {
+            println!("{:?}", result)
+        }
     }
 }
