@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 use crate::engine::hex::Hex;
 
-#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Default, Copy, Clone)]
+#[derive(Debug, Ord, PartialOrd, Eq, PartialEq, Default, Copy, Clone, Hash)]
 pub struct RowCol {
     pub row: i32,
     pub col: i32,

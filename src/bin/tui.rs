@@ -15,6 +15,7 @@ use std::time::Duration;
 use itertools::Itertools;
 use ratatui::prelude::Direction;
 use ratatui::style::Stylize;
+use rustc_hash::FxHashSet;
 use thiserror::Error;
 use crate::AppError::AiError;
 
@@ -187,7 +188,6 @@ impl App {
     }
 
     fn draw_map(&self, frame: &mut Frame, area: &Rect) {
-        // When you select a piece highlight the valid moves
         let hex_map = self.game.hive.to_hex_map();
         let map_dimensions = row_col::dimensions(hex_map.keys());
         let board_dimensions = self.board_dimensions();
@@ -212,6 +212,12 @@ impl App {
                 }
             });
 
+        let starred_locations = if let Some(piece) = self.selected_piece {
+            self.game.valid_destinations_for_piece(&piece.to_hex()).map(|hex| RowCol::from_hex(&hex)).collect()
+        } else {
+            FxHashSet::default()
+        };
+
         let default = Text::raw(".");
         for (i, cell) in cells.enumerate() {
             let visual_row = (i as i32 / board_dimensions.width()) - 1;
@@ -225,17 +231,21 @@ impl App {
                 frame.set_cursor_position(cell)
             }
 
-            let mut text = self.game.hive.map.get(&hex).map(|t| {
-                if t.color == Color::White {
-                    Text::raw(t.to_string()).black().on_white()
-                } else {
-                    Text::raw(t.to_string()).white().on_black()
+            if starred_locations.contains(&row_col) {
+                frame.render_widget("*", cell);
+            } else {
+                let mut text = self.game.hive.map.get(&hex).map(|t| {
+                    if t.color == Color::White {
+                        Text::raw(t.to_string()).black().on_white()
+                    } else {
+                        Text::raw(t.to_string()).white().on_black()
+                    }
+                }).unwrap_or(default.clone());
+                if Some(row_col) == self.selected_piece {
+                    text = text.underlined();
                 }
-            }).unwrap_or(default.clone());
-            if Some(row_col) == self.selected_piece {
-                text = text.underlined();
+                frame.render_widget(text, cell);
             }
-            frame.render_widget(text, cell);
         }
     }
 }

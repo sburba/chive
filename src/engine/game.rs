@@ -247,6 +247,14 @@ impl Game {
         valid_turns
     }
 
+    pub fn valid_destinations_for_piece(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+        //TODO: This is a slow way to do this
+        self.valid_moves().into_iter().filter_map(|turn| match turn {
+            Move { from, to } if from == *hex => Some(to),
+            _ => None
+        })
+    }
+
     fn valid_moves(&self) -> Vec<Turn> {
         let mut valid_turns: Vec<Turn> = Vec::new();
         if self.active_reserve().contains(&Bug::Queen) {
