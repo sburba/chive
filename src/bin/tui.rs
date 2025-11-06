@@ -7,11 +7,13 @@ use chive::engine::row_col::{RowCol, RowColDimensions};
 use minimax::{IterativeOptions, ParallelOptions, ParallelSearch, Strategy};
 use ratatui::crossterm::event;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::{Constraint, Layout};
+use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::Text;
 use ratatui::{DefaultTerminal, Frame};
 use std::io;
 use std::time::Duration;
+use itertools::Itertools;
+use ratatui::prelude::Direction;
 use ratatui::style::Stylize;
 use thiserror::Error;
 use crate::AppError::AiError;
@@ -72,7 +74,7 @@ impl App {
                 } else {
                     self.ai.set_timeout(Duration::from_secs(10));
                     let turn = self.ai.choose_move(&self.game).unwrap();
-                    self.ai.set_timeout(Duration::from_secs(1));
+                    self.ai.set_timeout(Duration::from_millis(15));
                     self.game = self.game.with_turn_applied(turn);
                     if let Some(result) = self.game_result() {
                         return Ok(result);
@@ -109,6 +111,11 @@ impl App {
                     } => {
                         self.cursor_pos.row =
                             (self.cursor_pos.row + 1).clamp(dims.row_min, dims.row_max);
+                    },
+                    KeyEvent {
+                        code: KeyCode::Esc, ..
+                    } => {
+                        self.selected_piece = None;
                     }
                     KeyEvent {
                         code: KeyCode::Enter, ..
@@ -118,11 +125,12 @@ impl App {
                         } else {
                             if self.selected_piece == Some(self.cursor_pos) {
                                 self.selected_piece = None;
-                            }
-                            let turn = Turn::Move {from: self.selected_piece.unwrap().to_hex(), to: self.cursor_pos.to_hex()};
-                            if self.game.turn_is_valid(turn) {
-                                self.game = self.game.with_turn_applied(turn);
-                                self.selected_piece = None
+                            } else {
+                                let turn = Turn::Move {from: self.selected_piece.unwrap().to_hex(), to: self.cursor_pos.to_hex()};
+                                if self.game.turn_is_valid(turn) {
+                                    self.game = self.game.with_turn_applied(turn);
+                                    self.selected_piece = None
+                                }
                             }
                         }
                     }
@@ -165,6 +173,21 @@ impl App {
     }
 
     fn draw(&self, frame: &mut Frame) {
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(vec![Constraint::Length(1), Constraint::Length(1), Constraint::Min(3)])
+            .split(frame.area());
+
+        let white_pieces = self.game.white_reserve.iter().map(|b| b.to_string()).join(", ");
+        let black_pieces = self.game.black_reserve.iter().map(|b| b.to_string()).join(", ");
+        frame.render_widget(Text::raw(format!("White Reserve: {white_pieces}")), layout[0]);
+        frame.render_widget(Text::raw(format!("Black Reserve: {black_pieces}")), layout[1]);
+        self.draw_map(frame, &layout[2])
+    }
+
+    fn draw_map(&self, frame: &mut Frame, area: &Rect) {
+        // When you select a piece highlight the valid moves
+        // Show reserve pieces
         let hex_map = self.game.hive.to_hex_map();
         let map_dimensions = row_col::dimensions(hex_map.keys());
         let board_dimensions = self.board_dimensions();
@@ -177,8 +200,7 @@ impl App {
         let vertical = Layout::vertical(row_constraints);
         let odd_first = board_dimensions.row_min & 1 == 1;
 
-        let cells = frame
-            .area()
+        let cells = area
             .layout_vec(&vertical)
             .into_iter()
             .enumerate()
@@ -228,7 +250,7 @@ fn main() {
         IterativeOptions::new(),
         ParallelOptions::new().with_background_pondering(),
     );
-    strategy.set_timeout(Duration::from_secs(1));
+    strategy.set_timeout(Duration::from_millis(15));
     let app = App {
         game: Default::default(),
         ai: strategy,
