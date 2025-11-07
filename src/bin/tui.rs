@@ -6,6 +6,7 @@ use chive::engine::hex::Hex;
 use chive::engine::hive::{Color, Tile};
 use chive::engine::row_col::{RowCol, RowColDimensions};
 use chive::engine::{ai, row_col};
+use clap::Parser;
 use itertools::Itertools;
 use ratatui::crossterm::event;
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
@@ -15,6 +16,7 @@ use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::{DefaultTerminal, Frame};
 use rustc_hash::FxHashSet;
+use std::cmp::max;
 use std::io;
 use std::time::Duration;
 use thiserror::Error;
@@ -161,7 +163,8 @@ impl App {
                         }
                     }
                     KeyEvent {
-                        code: KeyCode::End, ..
+                        code: KeyCode::F(1),
+                        ..
                     } => return Ok(self.game.hive.to_string()),
                     KeyEvent {
                         code: KeyCode::Char(char),
@@ -318,12 +321,34 @@ impl App {
     }
 }
 
+/// Play hive against the computer
+///
+/// - Arrow keys to move around
+///
+/// - First letter of the bug to place a bug
+///
+/// - Enter to select tile, enter again to move piece to cursor
+///
+/// - Escape to deselect
+///
+/// - f1 to quit
+#[derive(Debug, Parser)]
+pub struct Config {
+    #[clap(value_parser = humantime::parse_duration, default_value = "5s")]
+    #[arg(short, long)]
+    pondering_time: Duration,
+}
+
 fn main() {
+    let args = Config::parse();
     let terminal = ratatui::init();
-    let pondering_time = Duration::from_secs(5);
+    let pondering_time = args.pondering_time;
     let mut app = App {
         game: Default::default(),
-        ai: Ai::new(pondering_time, pondering_time * 3),
+        ai: Ai::new(
+            pondering_time,
+            max(pondering_time * 3, Duration::from_secs(5)),
+        ),
         cursor_pos: Default::default(),
         player_color: Default::default(),
         selected_pos: None,

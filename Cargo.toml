@@ -11,6 +11,8 @@ rustc-hash = "2.1.1"
 strum = { version = "0.27.2", features = ["derive"] }
 thiserror = "2.0.17"
 ratatui = "0.30.0-beta.0"
+humantime = "2.3.0"
+clap = { version = "4.5.51", features = ["derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
