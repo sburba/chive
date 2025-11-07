@@ -469,7 +469,6 @@ impl Game {
     fn allowed_ant_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut current = *start;
         let mut allowed_moves = FxHashSet::default();
-        let mut disallowed_moves = FxHashSet::default();
         let mut frontier: Vec<Hex> = vec![];
         frontier.push(current);
 
@@ -477,10 +476,7 @@ impl Game {
         while !frontier.is_empty() {
             current = frontier.pop().unwrap();
             for dest in self.allowed_slides(&current, Some(start)) {
-                if disallowed_moves.contains(&dest)
-                    || allowed_moves.contains(&dest)
-                    || *start == dest
-                {
+                if allowed_moves.contains(&dest) || *start == dest {
                     continue;
                 }
                 // The ant can only break the hive on its first move as long as it is adjacent to
@@ -489,7 +485,6 @@ impl Game {
                     || !first_move
                         && self.slide_would_separate_self_from_hive(&current, &dest, start)
                 {
-                    disallowed_moves.insert(dest);
                     continue;
                 }
                 allowed_moves.insert(dest);
@@ -930,6 +925,19 @@ mod tests {
              .  a  a
             .  .  Q
              .  .  a
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_ant_can_go_in_and_out_of_pocket() {
+        assert_moves(
+            r#"
+            .  *  *  *
+             *  a  a  A
+            .  *  *  a  *
+             .  *  a  *
+            .  .  *  *
         "#,
         );
     }
