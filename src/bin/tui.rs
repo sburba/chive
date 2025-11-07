@@ -5,6 +5,7 @@ use chive::engine::game::{Game, GameResult, Turn};
 use chive::engine::hex::Hex;
 use chive::engine::hive::{Color, Tile};
 use chive::engine::row_col::{RowCol, RowColDimensions};
+use chive::engine::save_game::{list_save_games, load_game, save_game};
 use chive::engine::{ai, row_col};
 use clap::Parser;
 use itertools::Itertools;
@@ -18,6 +19,7 @@ use ratatui::{DefaultTerminal, Frame};
 use rustc_hash::FxHashSet;
 use std::cmp::max;
 use std::io;
+use std::path::PathBuf;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -68,6 +70,10 @@ impl App {
 
     fn board_string(&self) -> String {
         self.game.hive.to_string()
+    }
+
+    fn game(&self) -> Game {
+        self.game.clone()
     }
 
     fn game_result(&self) -> Option<String> {
@@ -337,14 +343,41 @@ pub struct Config {
     #[clap(value_parser = humantime::parse_duration, default_value = "5s")]
     #[arg(short, long)]
     pondering_time: Duration,
+
+    #[clap(default_value = "chive-saves")]
+    #[arg(long)]
+    save_directory: PathBuf,
+
+    #[arg(long)]
+    load_save_file: Option<PathBuf>,
+
+    #[arg(short, long)]
+    list_saves: bool,
 }
 
 fn main() {
     let args = Config::parse();
+    if args.list_saves {
+        let saves = list_save_games(args.save_directory).unwrap();
+        println!("{}", saves.iter().join("\n"));
+        return;
+    }
+
+    let game = if let Some(save) = args.load_save_file {
+        load_game(
+            [args.save_directory.clone(), save]
+                .iter()
+                .collect::<PathBuf>(),
+        )
+        .unwrap()
+    } else {
+        Default::default()
+    };
+
     let terminal = ratatui::init();
     let pondering_time = args.pondering_time;
     let mut app = App {
-        game: Default::default(),
+        game,
         ai: Ai::new(
             pondering_time,
             max(pondering_time * 3, Duration::from_secs(5)),
@@ -359,14 +392,20 @@ fn main() {
     match result {
         Ok(final_board_state) => {
             println!("{}", final_board_state);
+            let game_path = save_game(&app.game(), args.save_directory).unwrap();
+            println!("Saved game to {}", game_path.display());
         }
         Err(AiError(_)) => {
             println!("AI Failed to find move in time :(");
             println!("{}", app.board_string());
+            let game_path = save_game(&app.game(), args.save_directory).unwrap();
+            println!("Saved game to {}", game_path.display());
         }
         _ => {
             println!("{:?}", result);
             println!("{}", app.board_string());
+            let game_path = save_game(&app.game(), args.save_directory).unwrap();
+            println!("Saved game to {}", game_path.display());
         }
     }
 }

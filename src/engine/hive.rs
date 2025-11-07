@@ -1,14 +1,16 @@
 use crate::engine::bug::{Bug, BugParseError};
-use crate::engine::hex::{Hex, neighbors};
-use crate::engine::parse::{HexMapParseError, hex_map_to_string, parse_hex_map_string};
+use crate::engine::hex::{neighbors, Hex};
+use crate::engine::parse::{hex_map_to_string, parse_hex_map_string, HexMapParseError};
+use crate::engine::row_col::{dimensions, RowColDimensions};
+use rustc_hash::FxHashMap;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
-use rustc_hash::FxHashMap;
-use strum::Display;
+use strum::{Display, EnumString};
 use thiserror::Error;
-use crate::engine::row_col::{dimensions, RowColDimensions};
 
-#[derive(Debug, Clone, Eq, PartialEq, Copy, Ord, PartialOrd, Hash, Default, Display)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Copy, Ord, PartialOrd, Hash, Default, Display, EnumString,
+)]
 pub enum Color {
     Black,
     #[default]
@@ -73,7 +75,9 @@ impl Hive {
     }
 
     pub fn top_tile_at(&self, hex: &Hex) -> Option<Tile> {
-        self.topmost_occupied_hex(hex).and_then(|hex| self.map.get(&hex)).copied()
+        self.topmost_occupied_hex(hex)
+            .and_then(|hex| self.map.get(&hex))
+            .copied()
     }
 
     pub fn tile_at(&self, hex: &Hex) -> Option<Tile> {
@@ -108,13 +112,13 @@ impl Hive {
     }
 
     pub fn stack_at(&self, hex: &Hex) -> impl Iterator<Item = &Tile> {
-        let mut topmost_tile = self.map.get(&Hex{h: 0, ..*hex});
+        let mut topmost_tile = self.map.get(&Hex { h: 0, ..*hex });
         let mut height = 0;
         let mut stack = vec![];
         while let Some(new_tile) = topmost_tile {
             stack.push(new_tile);
             height += 1;
-            topmost_tile = self.map.get(&Hex{h: height, ..*hex});
+            topmost_tile = self.map.get(&Hex { h: height, ..*hex });
         }
 
         stack.into_iter()
