@@ -298,7 +298,7 @@ impl Game {
                     }
                     Bug::Queen => {
                         let allowed_moves = self
-                            .allowed_slides(hex, None)
+                            .allowed_slides(hex, Some(hex))
                             .filter(|possible_move| {
                                 !move_would_break_hive(&self.hive, hex, possible_move)
                             })
@@ -918,6 +918,18 @@ mod tests {
             .  a  q
              .  .  a
             s  A  a
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_beetle_cannot_temporarily_break_hive() {
+        assert_moves(
+            r#"
+            .  .  .
+             .  a  a
+            .  .  Q
+             .  .  a
         "#,
         );
     }

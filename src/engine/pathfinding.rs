@@ -52,8 +52,6 @@ pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
     let mut neighbors = hive.occupied_neighbors_at_same_level(from);
     let first = neighbors.next().unwrap();
 
-    
-
     neighbors.any(|neighbor| {
         !pieces_are_connected(hive, &first, &neighbor, from, &mut connected_pieces).unwrap()
     })
@@ -96,10 +94,7 @@ fn pieces_are_connected(
     while !frontier.is_empty() {
         let current = frontier.pop().unwrap();
 
-        if current.hex == end
-            || is_adjacent(&current.hex, &end)
-            || already_connected_pieces.contains(&current.hex)
-        {
+        if current.hex == end || is_adjacent(&current.hex, &end) {
             already_connected_pieces.extend(hexes_seen);
             return Ok(true);
         }

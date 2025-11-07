@@ -348,11 +348,15 @@ pub struct Config {
     #[arg(long)]
     save_directory: PathBuf,
 
-    #[arg(long)]
+    #[arg(short = 's', long)]
     load_save_file: Option<PathBuf>,
 
     #[arg(short, long)]
     list_saves: bool,
+
+    #[clap(default_value = "white")]
+    #[arg(short = 'c', long)]
+    player_color: Color,
 }
 
 fn main() {
@@ -383,7 +387,7 @@ fn main() {
             max(pondering_time * 3, Duration::from_secs(5)),
         ),
         cursor_pos: Default::default(),
-        player_color: Default::default(),
+        player_color: args.player_color,
         selected_pos: None,
         last_ai_move_pos: None,
     };

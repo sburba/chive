@@ -11,6 +11,7 @@ use thiserror::Error;
 #[derive(
     Debug, Clone, Eq, PartialEq, Copy, Ord, PartialOrd, Hash, Default, Display, EnumString,
 )]
+#[strum(serialize_all = "lowercase")]
 pub enum Color {
     Black,
     #[default]
