@@ -1,12 +1,12 @@
 use crate::engine::bug::Bug;
 use crate::engine::game::Turn::{Move, Placement};
-use crate::engine::hex::{Hex, is_adjacent, neighbors};
+use crate::engine::hex::{is_adjacent, neighbors, Hex};
 use crate::engine::hive::{Color, Hive, Tile};
 use crate::engine::pathfinding::move_would_break_hive;
 use crate::engine::zobrist::{ZobristHash, ZobristTable};
-use Turn::Skip;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
+use Turn::Skip;
 
 #[derive(Clone)]
 pub struct Game {
@@ -249,10 +249,12 @@ impl Game {
 
     pub fn valid_destinations_for_piece(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
         //TODO: This is a slow way to do this
-        self.valid_moves().into_iter().filter_map(|turn| match turn {
-            Move { from, to } if from == *hex => Some(to),
-            _ => None
-        })
+        self.valid_moves()
+            .into_iter()
+            .filter_map(|turn| match turn {
+                Move { from, to } if from == *hex => Some(to),
+                _ => None,
+            })
     }
 
     fn valid_moves(&self) -> Vec<Turn> {
@@ -423,27 +425,25 @@ impl Game {
 
         for i in 1..=3 {
             let mut new_paths: Vec<Vec<Hex>> = vec![];
+            let first_move = i == 1;
             for path in paths {
-                let hex = path.last().unwrap();
-                for dest in self.allowed_slides(hex, Some(start)) {
-                    if !self
-                        .hive
-                        .occupied_neighbors_at_same_level(hex)
-                        .filter(|neighbor| neighbor != start)
-                        .any(|neighbor| is_adjacent(&dest, &neighbor))
+                let current = path.last().unwrap();
+                for dest in self.allowed_slides(current, Some(start)) {
+                    if path.contains(&dest) {
+                        continue;
+                    }
+                    // The spider can only break the hive on its first move as long as it is adjacent to
+                    // something at each step. I think?!?!?!
+                    if first_move && move_would_break_hive(&self.hive, current, &dest)
+                        || !first_move
+                            && self.slide_would_separate_self_from_hive(current, &dest, start)
                     {
                         continue;
                     }
 
-                    if i == 1 && move_would_break_hive(&self.hive, start, &dest) {
-                        continue;
-                    }
-
-                    if !path.contains(&dest) {
-                        let mut new_path = path.clone();
-                        new_path.push(dest);
-                        new_paths.push(new_path);
-                    }
+                    let mut new_path = path.clone();
+                    new_path.push(dest);
+                    new_paths.push(new_path);
                 }
             }
             paths = new_paths;
@@ -459,33 +459,43 @@ impl Game {
         unique_destinations.into_iter()
     }
 
+    fn slide_would_separate_self_from_hive(&self, from: &Hex, to: &Hex, ignore_hex: &Hex) -> bool {
+        !self
+            .hive
+            .occupied_neighbors_at_same_level(from)
+            .any(|neighbor| neighbor != *ignore_hex && is_adjacent(&neighbor, to))
+    }
+
     fn allowed_ant_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut current = *start;
         let mut allowed_moves = FxHashSet::default();
+        let mut disallowed_moves = FxHashSet::default();
         let mut frontier: Vec<Hex> = vec![];
         frontier.push(current);
 
-        let first_move = true;
+        let mut first_move = true;
         while !frontier.is_empty() {
             current = frontier.pop().unwrap();
-            for dest in self.allowed_slides(&current, None) {
-                // If the destination isn't connected to anything, then it's not a valid move
-                if !self
-                    .hive
-                    .occupied_neighbors_at_same_level(&dest)
-                    .any(|_| true)
+            for dest in self.allowed_slides(&current, Some(start)) {
+                if disallowed_moves.contains(&dest)
+                    || allowed_moves.contains(&dest)
+                    || *start == dest
                 {
                     continue;
                 }
                 // The ant can only break the hive on its first move as long as it is adjacent to
                 // something at each step. I think?!?!?!
-                if first_move && move_would_break_hive(&self.hive, start, &dest) {
+                if first_move && move_would_break_hive(&self.hive, &current, &dest)
+                    || !first_move
+                        && self.slide_would_separate_self_from_hive(&current, &dest, start)
+                {
+                    disallowed_moves.insert(dest);
                     continue;
                 }
-                if *start != dest && allowed_moves.insert(dest) {
-                    frontier.push(dest);
-                }
+                allowed_moves.insert(dest);
+                frontier.push(dest);
             }
+            first_move = false;
         }
 
         allowed_moves.into_iter()
@@ -877,7 +887,7 @@ mod tests {
     }
 
     #[test]
-    fn test_spider_does_not_turbofuck_hive() {
+    fn test_spider_cannot_make_illegal_slides() {
         assert_moves(
             r#"
             q  .
@@ -886,6 +896,28 @@ mod tests {
              S  .
             .  q
              a  .
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_spider_cannot_temporarily_break_hive() {
+        assert_moves(
+            r#"
+            .  a  q
+             .  .  a
+            s  S  a
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_ant_cannot_temporarily_break_hive() {
+        assert_moves(
+            r#"
+            .  a  q
+             .  .  a
+            s  A  a
         "#,
         );
     }

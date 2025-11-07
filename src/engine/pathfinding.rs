@@ -1,10 +1,10 @@
 use crate::engine::hex;
-use crate::engine::hex::{Hex, is_adjacent};
+use crate::engine::hex::{is_adjacent, Hex};
 use crate::engine::hive::Hive;
 use crate::engine::pathfinding::PathfindingError::HexNotPopulated;
-use std::cmp::Ordering;
-use std::collections::{BinaryHeap};
 use rustc_hash::FxHashSet;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 use thiserror::Error;
 
 #[derive(Eq, PartialEq, Hash, Debug, Clone, Copy)]
@@ -33,8 +33,6 @@ impl PartialOrd for PathLocation {
 }
 
 pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
-    let mut connected_pieces = FxHashSet::default();
-
     // You can't break the hive by moving from any layer but the bottom layer
     if from.h != 0 {
         return false;
@@ -50,13 +48,15 @@ pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
         return true;
     }
 
-    for hex in hive.occupied_neighbors_at_same_level(from) {
-        if move_would_disconnect_piece(hive, from, to, &hex, &mut connected_pieces).unwrap() {
-            return true;
-        }
-    }
+    let mut connected_pieces = FxHashSet::default();
+    let mut neighbors = hive.occupied_neighbors_at_same_level(from);
+    let first = neighbors.next().unwrap();
 
-    false
+    
+
+    neighbors.any(|neighbor| {
+        !pieces_are_connected(hive, &first, &neighbor, from, &mut connected_pieces).unwrap()
+    })
 }
 
 #[derive(Error, Debug)]
@@ -64,30 +64,34 @@ pub enum PathfindingError {
     #[error("Affected hex {hex:?} must contain a tile")]
     HexNotPopulated { hex: Hex },
 }
-fn move_would_disconnect_piece(
+
+fn pieces_are_connected(
     hive: &Hive,
-    from: &Hex,
-    to: &Hex,
-    affected_piece: &Hex,
+    left: &Hex,
+    right: &Hex,
+    hex_to_avoid: &Hex,
     already_connected_pieces: &mut FxHashSet<Hex>,
 ) -> Result<bool, PathfindingError> {
-    if !hive.map.contains_key(affected_piece) {
+    let left_hex_populated = hive.map.contains_key(left);
+    let right_hex_populated = hive.map.contains_key(right);
+    if !left_hex_populated || !right_hex_populated {
         return Err(HexNotPopulated {
-            hex: *affected_piece,
+            hex: if !left_hex_populated { *left } else { *right },
         });
     }
 
-    let hex_to_avoid = if from.h == 0 { Some(*from) } else { None };
-    let end = Hex { h: 0, ..*to };
+    let start = left;
+    let end = Hex { h: 0, ..*right };
 
     let mut frontier = BinaryHeap::new();
     let start_location = PathLocation {
-        hex: *affected_piece,
+        hex: *start,
         priority: 0,
     };
+
     frontier.push(start_location);
     let mut hexes_seen = FxHashSet::default();
-    hexes_seen.insert(*affected_piece);
+    hexes_seen.insert(*start);
 
     while !frontier.is_empty() {
         let current = frontier.pop().unwrap();
@@ -97,11 +101,11 @@ fn move_would_disconnect_piece(
             || already_connected_pieces.contains(&current.hex)
         {
             already_connected_pieces.extend(hexes_seen);
-            return Ok(false);
+            return Ok(true);
         }
 
         for next in hive.occupied_neighbors_at_same_level(&current.hex) {
-            if Some(next) == hex_to_avoid {
+            if next == *hex_to_avoid {
                 continue;
             }
             if !hexes_seen.contains(&next) {
@@ -113,5 +117,5 @@ fn move_would_disconnect_piece(
             }
         }
     }
-    Ok(true)
+    Ok(false)
 }
