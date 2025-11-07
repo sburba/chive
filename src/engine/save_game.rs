@@ -31,8 +31,6 @@ pub enum SaveGameError {
     ParseGameError(#[from] HiveParseError),
 }
 
-/// Saves the game to a timestamped file.
-/// The file will contain both the active player and the serialized game state.
 pub fn save_game(game: &Game, directory_path: impl AsRef<Path>) -> Result<PathBuf, SaveGameError> {
     let dir_path = directory_path.as_ref();
 
@@ -62,8 +60,6 @@ pub fn save_game(game: &Game, directory_path: impl AsRef<Path>) -> Result<PathBu
     Ok(file_path)
 }
 
-/// Loads a game from the given file path.
-/// Returns (active_player, Game)
 pub fn load_game(file_path: impl AsRef<Path>) -> Result<Game, SaveGameError> {
     let path = file_path.as_ref();
     let mut contents = String::new();
@@ -97,7 +93,6 @@ pub fn load_game(file_path: impl AsRef<Path>) -> Result<Game, SaveGameError> {
     Ok(game)
 }
 
-/// Lists all saved game files in the given directory
 pub fn list_save_games(directory_path: impl AsRef<Path>) -> Result<Vec<String>, SaveGameError> {
     let dir_path = directory_path.as_ref();
 
