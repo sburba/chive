@@ -38,8 +38,7 @@ pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
         return false;
     }
 
-    // Detect slides that temporarily break the hive
-    // This is to prevent this type of slide (From white ant to star):
+    // Detect slides that temporarily break the hive, i.e. (from white ant to star):
     //  a  a  .
     // *  .  a
     //  A  a  .
