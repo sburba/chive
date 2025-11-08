@@ -38,6 +38,11 @@ pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
         return false;
     }
 
+    // Detect slides that temporarily break the hive
+    // This is to prevent this type of slide (From white ant to star):
+    //  a  a  .
+    // *  .  a
+    //  A  a  .
     //TODO: I don't think this logic should be here, it's too specific to each type of movement
     let is_slide = from.h == 0 && to.h == 0 && is_adjacent(from, to);
     if is_slide
@@ -53,7 +58,7 @@ pub fn move_would_break_hive(hive: &Hive, from: &Hex, to: &Hex) -> bool {
     let first = neighbors.next().unwrap();
 
     neighbors.any(|neighbor| {
-        !pieces_are_connected(hive, &first, &neighbor, from, &mut connected_pieces).unwrap()
+        !pieces_are_connected(hive, &neighbor, &first, from, &mut connected_pieces).unwrap()
     })
 }
 
@@ -68,7 +73,7 @@ fn pieces_are_connected(
     left: &Hex,
     right: &Hex,
     hex_to_avoid: &Hex,
-    already_connected_pieces: &mut FxHashSet<Hex>,
+    pieces_connected_to_right: &mut FxHashSet<Hex>,
 ) -> Result<bool, PathfindingError> {
     let left_hex_populated = hive.map.contains_key(left);
     let right_hex_populated = hive.map.contains_key(right);
@@ -94,8 +99,11 @@ fn pieces_are_connected(
     while !frontier.is_empty() {
         let current = frontier.pop().unwrap();
 
-        if current.hex == end || is_adjacent(&current.hex, &end) {
-            already_connected_pieces.extend(hexes_seen);
+        if current.hex == end
+            || is_adjacent(&current.hex, &end)
+            || pieces_connected_to_right.contains(&current.hex)
+        {
+            pieces_connected_to_right.extend(hexes_seen);
             return Ok(true);
         }
 
