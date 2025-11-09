@@ -97,28 +97,6 @@ impl App {
         }
     }
 
-    fn move_cursor(&mut self, dir: Dir) {
-        let dims = self.board_dimensions();
-        match dir {
-            Dir::Left => {
-                self.cursor_pos.col =
-                    wrapping_add(self.cursor_pos.col, -1, dims.col_min, dims.col_max);
-            }
-            Dir::Right => {
-                self.cursor_pos.col =
-                    wrapping_add(self.cursor_pos.col, 1, dims.col_min, dims.col_max);
-            }
-            Dir::Up => {
-                self.cursor_pos.row =
-                    wrapping_add(self.cursor_pos.row, -1, dims.row_min, dims.row_max);
-            }
-            Dir::Down => {
-                self.cursor_pos.row =
-                    wrapping_add(self.cursor_pos.row, 1, dims.row_min, dims.row_max);
-            }
-        }
-    }
-
     fn run(&mut self, mut terminal: DefaultTerminal) -> Result<String, AppError> {
         loop {
             if let Some(result) = self.game_result() {
@@ -126,9 +104,7 @@ impl App {
             }
             terminal.draw(|frame| self.draw(frame))?;
             if self.game.active_player != self.player_color {
-                let turn = self.ai.choose_turn(&self.game)?;
-                self.last_ai_move_pos = self.last_affected_row_col(&turn);
-                self.game = self.game.with_turn_applied(turn);
+                self.make_ai_move()?;
                 if let Some(result) = self.game_result() {
                     return Ok(result);
                 }
@@ -161,35 +137,7 @@ impl App {
                     KeyEvent {
                         code: KeyCode::Enter,
                         ..
-                    } => {
-                        if self.selected_pos.is_none() {
-                            self.selected_pos = self
-                                .game
-                                .hive
-                                .topmost_occupied_hex(&self.cursor_pos.to_hex())
-                                .filter(|hex| {
-                                    self.game
-                                        .hive
-                                        .tile_at(hex)
-                                        .is_some_and(|tile| tile.color == self.player_color)
-                                })
-                                .map(|hex: Hex| RowCol::from_hex(&hex))
-                        } else if self.selected_pos == Some(self.cursor_pos) {
-                            self.selected_pos = None;
-                        } else {
-                            let turn = Turn::Move {
-                                from: self.selected_pos.unwrap().to_hex(),
-                                to: self
-                                    .game
-                                    .hive
-                                    .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
-                            };
-                            if self.game.turn_is_valid(turn) {
-                                self.game = self.game.with_turn_applied(turn);
-                                self.selected_pos = None
-                            }
-                        }
-                    }
+                    } => self.handle_enter(),
                     KeyEvent {
                         code: KeyCode::F(1),
                         ..
@@ -198,27 +146,90 @@ impl App {
                         code: KeyCode::Char(char),
                         ..
                     } => {
-                        if self.game.active_player != self.player_color {
-                            continue;
-                        }
-
-                        if let Ok(bug) = char.to_string().to_uppercase().parse::<Bug>() {
-                            let turn = Turn::Placement {
-                                hex: self.cursor_pos.to_hex(),
-                                tile: Tile {
-                                    bug,
-                                    color: self.player_color,
-                                },
-                            };
-                            if self.game.turn_is_valid(turn) {
-                                self.game = self.game.with_turn_applied(turn);
-                            }
-                        }
+                        self.place_piece(char);
                     }
                     _ => {}
                 }
             }
         }
+    }
+
+    fn move_cursor(&mut self, dir: Dir) {
+        let dims = self.board_dimensions();
+        match dir {
+            Dir::Left => {
+                self.cursor_pos.col =
+                    wrapping_add(self.cursor_pos.col, -1, dims.col_min, dims.col_max);
+            }
+            Dir::Right => {
+                self.cursor_pos.col =
+                    wrapping_add(self.cursor_pos.col, 1, dims.col_min, dims.col_max);
+            }
+            Dir::Up => {
+                self.cursor_pos.row =
+                    wrapping_add(self.cursor_pos.row, -1, dims.row_min, dims.row_max);
+            }
+            Dir::Down => {
+                self.cursor_pos.row =
+                    wrapping_add(self.cursor_pos.row, 1, dims.row_min, dims.row_max);
+            }
+        }
+    }
+
+    fn handle_enter(&mut self) {
+        if self.selected_pos.is_none() {
+            self.selected_pos = self
+                .game
+                .hive
+                .topmost_occupied_hex(&self.cursor_pos.to_hex())
+                .filter(|hex| {
+                    self.game
+                        .hive
+                        .tile_at(hex)
+                        .is_some_and(|tile| tile.color == self.player_color)
+                })
+                .map(|hex: Hex| RowCol::from_hex(&hex))
+        } else if self.selected_pos == Some(self.cursor_pos) {
+            self.selected_pos = None;
+        } else {
+            let turn = Turn::Move {
+                from: self.selected_pos.unwrap().to_hex(),
+                to: self
+                    .game
+                    .hive
+                    .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
+            };
+            if self.game.turn_is_valid(turn) {
+                self.game = self.game.with_turn_applied(turn);
+                self.selected_pos = None
+            }
+        }
+    }
+
+    fn place_piece(&mut self, char: char) {
+        if self.game.active_player != self.player_color {
+            return;
+        }
+
+        if let Ok(bug) = char.to_string().to_uppercase().parse::<Bug>() {
+            let turn = Turn::Placement {
+                hex: self.cursor_pos.to_hex(),
+                tile: Tile {
+                    bug,
+                    color: self.player_color,
+                },
+            };
+            if self.game.turn_is_valid(turn) {
+                self.game = self.game.with_turn_applied(turn);
+            }
+        }
+    }
+
+    fn make_ai_move(&mut self) -> Result<(), AppError> {
+        let turn = self.ai.choose_turn(&self.game)?;
+        self.last_ai_move_pos = self.last_affected_row_col(&turn);
+        self.game = self.game.with_turn_applied(turn);
+        Ok(())
     }
 
     fn draw(&self, frame: &mut Frame) {
