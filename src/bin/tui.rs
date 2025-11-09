@@ -48,6 +48,19 @@ fn tile_to_span<'a>(tile: Tile) -> Span<'a> {
     }
 }
 
+enum Dir {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+// Add left to right, wrapping the value around to stay within min and max
+fn wrapping_add(left: i32, right: i32, min: i32, max: i32) -> i32 {
+    let range = max - min + 1;
+    min + (left - min + right).rem_euclid(range)
+}
+
 impl App {
     fn last_affected_row_col(&self, turn: &Turn) -> Option<RowCol> {
         match turn {
@@ -84,6 +97,28 @@ impl App {
         }
     }
 
+    fn move_cursor(&mut self, dir: Dir) {
+        let dims = self.board_dimensions();
+        match dir {
+            Dir::Left => {
+                self.cursor_pos.col =
+                    wrapping_add(self.cursor_pos.col, -1, dims.col_min, dims.col_max);
+            }
+            Dir::Right => {
+                self.cursor_pos.col =
+                    wrapping_add(self.cursor_pos.col, 1, dims.col_min, dims.col_max);
+            }
+            Dir::Up => {
+                self.cursor_pos.row =
+                    wrapping_add(self.cursor_pos.row, -1, dims.row_min, dims.row_max);
+            }
+            Dir::Down => {
+                self.cursor_pos.row =
+                    wrapping_add(self.cursor_pos.row, 1, dims.row_min, dims.row_max);
+            }
+        }
+    }
+
     fn run(&mut self, mut terminal: DefaultTerminal) -> Result<String, AppError> {
         loop {
             if let Some(result) = self.game_result() {
@@ -100,42 +135,29 @@ impl App {
                 terminal.draw(|frame| self.draw(frame))?;
             }
 
-            let dims = self.board_dimensions();
             if let Some(key) = event::read()?.as_key_press_event() {
                 match key {
                     KeyEvent {
                         code: KeyCode::Left | KeyCode::Char('h'),
                         ..
-                    } => {
-                        self.cursor_pos.col =
-                            (self.cursor_pos.col - 1).clamp(dims.col_min, dims.col_max);
-                    }
+                    } => self.move_cursor(Dir::Left),
                     KeyEvent {
                         code: KeyCode::Right | KeyCode::Char('l'),
                         ..
-                    } => {
-                        self.cursor_pos.col =
-                            (self.cursor_pos.col + 1).clamp(dims.col_min, dims.col_max);
-                    }
+                    } => self.move_cursor(Dir::Right),
                     KeyEvent {
                         code: KeyCode::Up | KeyCode::Char('k'),
                         ..
-                    } => {
-                        self.cursor_pos.row =
-                            (self.cursor_pos.row - 1).clamp(dims.row_min, dims.row_max);
-                    }
+                    } => self.move_cursor(Dir::Up),
                     KeyEvent {
                         code: KeyCode::Down | KeyCode::Char('j'),
                         ..
                     } => {
-                        self.cursor_pos.row =
-                            (self.cursor_pos.row + 1).clamp(dims.row_min, dims.row_max);
+                        self.move_cursor(Dir::Down);
                     }
                     KeyEvent {
                         code: KeyCode::Esc, ..
-                    } => {
-                        self.selected_pos = None;
-                    }
+                    } => self.selected_pos = None,
                     KeyEvent {
                         code: KeyCode::Enter,
                         ..
