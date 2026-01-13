@@ -17,6 +17,7 @@ pub struct Game {
     pub black_reserve: Vec<Bug>,
     pub active_player: Color,
 }
+
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, Hash)]
 pub enum Turn {
     Placement { hex: Hex, tile: Tile },
@@ -348,6 +349,7 @@ impl Game {
         if self.hive.map.is_empty() {
             return active_player_reserve
                 .iter()
+                .filter(|bug| **bug != Bug::Queen)
                 .unique()
                 .map(|bug| Placement {
                     hex: Hex { q: 0, r: 0, h: 0 },
@@ -358,11 +360,13 @@ impl Game {
                 })
                 .collect();
         }
+
         if self.hive.map.len() == 1 {
             let only_occupied_hex = self.hive.map.iter().next().unwrap().0;
 
             return active_player_reserve
                 .iter()
+                .filter(|bug| **bug != Bug::Queen)
                 .flat_map(|bug| {
                     neighbors(only_occupied_hex).map(|hex| Placement {
                         hex,

@@ -69,6 +69,7 @@ impl App {
             Turn::Skip => self.last_ai_move_pos,
         }
     }
+
     fn board_dimensions(&self) -> RowColDimensions {
         let map_dimensions = row_col::dimensions(self.game.hive.to_hex_map().keys());
         RowColDimensions {
