@@ -272,29 +272,27 @@ impl Game {
             if tile.color == self.active_player {
                 match tile.bug {
                     Bug::Beetle => {
-                        let bottom_level = Hex { h: 0, ..*hex };
-                        let allowed_slides = self.allowed_slides(hex, None);
-                        let allowed_mounts =
-                            self.hive.occupied_neighbors_at_same_level(&bottom_level);
-                        let possible_moves =
-                            allowed_slides
-                                .chain(allowed_mounts)
-                                .map(|possible_move| Hex {
-                                    h: self.hive.stack_height(&possible_move),
-                                    ..possible_move
-                                });
-
-                        let unique_moves: FxHashSet<Hex> = FxHashSet::from_iter(possible_moves);
-
-                        let allowed_moves = unique_moves
-                            .into_iter()
+                        let allowed_moves = neighbors(hex)
+                            .filter_map(|neighbor| {
+                                let height = self.hive.stack_height(&neighbor);
+                                let dest = Hex {
+                                    h: height,
+                                    ..neighbor
+                                };
+                                if self.slide_is_allowed(&Hex { h: height, ..*hex }, &dest) {
+                                    Some(dest)
+                                } else {
+                                    None
+                                }
+                            })
                             .filter(|possible_move| {
                                 !move_would_break_hive(&self.hive, hex, possible_move)
                             })
-                            .map(|valid_move| Turn::Move {
+                            .map(|valid_move| Move {
                                 from: *hex,
                                 to: valid_move,
                             });
+
                         valid_turns.extend(allowed_moves);
                     }
                     Bug::Queen => {
@@ -498,6 +496,34 @@ impl Game {
         }
 
         allowed_moves.into_iter()
+    }
+
+    fn slide_is_allowed(&self, from: &Hex, to: &Hex) -> bool {
+        assert_eq!(from.h, to.h, "Slides must stay at the same height");
+
+        // To test if a slide is allowed, we need to check if the two adjacent tiles to the slide
+        // are blocking the slide for example in this board:
+        // .  .  1
+        //  .  Q  d
+        // .  .  2
+        // To check if Q can move to position d, we need to check spaces 1 and 2. If both are
+        // filled, Q cannot move there.
+        let mov = to - from;
+        let counter_clockwise_neighbor = from
+            + &Hex {
+                q: -mov.s(),
+                r: -mov.q,
+                h: 0,
+            };
+        let clockwise_neighbor = from
+            + &Hex {
+                q: -mov.r,
+                r: -mov.s(),
+                h: 0,
+            };
+
+        !self.hive.is_occupied(&clockwise_neighbor)
+            || !self.hive.is_occupied(&counter_clockwise_neighbor)
     }
 
     fn allowed_slides(

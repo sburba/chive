@@ -10,8 +10,9 @@ pub struct Hex {
 
 impl Hex {
     pub fn s(&self) -> i32 {
-        self.q + self.r
+        -self.q - self.r
     }
+
     pub fn base_level(&self) -> Hex {
         Hex {
             h: 0,
@@ -138,6 +139,16 @@ mod tests {
             1,
             flat_distance(&Hex { q: 0, r: 0, h: 0 }, &Hex { q: -1, r: 1, h: 0 })
         );
+    }
+
+    #[test]
+    fn test_s() {
+        // Verify the following equality:
+        // q + r + s == 0
+        assert_eq!(-2, Hex {q: 1, r: 1, h: 0}.s());
+        assert_eq!(-1, Hex {q: 0, r: 1, h: 0}.s());
+        assert_eq!(-1, Hex {q: 1, r: 0, h: 0}.s());
+        assert_eq!(1, Hex {q: -1, r: 0, h: 0}.s());
     }
 
     #[test]
