@@ -45,7 +45,7 @@ fn default_reserve() -> Vec<Bug> {
         Bug::Grasshopper,
         Bug::Spider,
         Bug::Spider,
-        Bug::Ladybug
+        Bug::Ladybug,
     ]
 }
 
@@ -229,6 +229,16 @@ impl Game {
         }
     }
 
+    pub fn valid_destinations_for_piece(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+        //TODO: This is a slow way to do this
+        self.valid_moves()
+            .into_iter()
+            .filter_map(|turn| match turn {
+                Move { from, to } if from == *hex => Some(to),
+                _ => None,
+            })
+    }
+
     pub fn valid_turns(&self) -> Vec<Turn> {
         let mut valid_turns: Vec<Turn> = vec![];
         let active_player_reserve = if self.active_player == Color::Black {
@@ -246,98 +256,6 @@ impl Game {
         if valid_turns.is_empty() {
             valid_turns.push(Skip)
         }
-        valid_turns
-    }
-
-    pub fn valid_destinations_for_piece(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
-        //TODO: This is a slow way to do this
-        self.valid_moves()
-            .into_iter()
-            .filter_map(|turn| match turn {
-                Move { from, to } if from == *hex => Some(to),
-                _ => None,
-            })
-    }
-
-    fn valid_moves(&self) -> Vec<Turn> {
-        let mut valid_turns: Vec<Turn> = Vec::new();
-        if self.active_reserve().contains(&Bug::Queen) {
-            return Vec::new();
-        }
-        for (hex, tile) in self.hive.toplevel_pieces() {
-            if tile.color == self.active_player {
-                match tile.bug {
-                    Bug::Beetle => {
-                        let allowed_moves = neighbors(hex)
-                            .filter_map(|neighbor| {
-                                let height = self.hive.stack_height(&neighbor);
-                                let dest = Hex {
-                                    h: height,
-                                    ..neighbor
-                                };
-                                if self.slide_is_allowed(&Hex { h: height, ..*hex }, &dest) {
-                                    Some(dest)
-                                } else {
-                                    None
-                                }
-                            })
-                            .filter(|possible_move| {
-                                !move_would_break_hive(&self.hive, hex, possible_move)
-                            })
-                            .map(|valid_move| Move {
-                                from: *hex,
-                                to: valid_move,
-                            });
-
-                        valid_turns.extend(allowed_moves);
-                    }
-                    Bug::Queen => {
-                        let allowed_moves = self
-                            .allowed_slides(hex, Some(hex))
-                            .filter(|possible_move| {
-                                !move_would_break_hive(&self.hive, hex, possible_move)
-                            })
-                            .map(|valid_move| Turn::Move {
-                                from: *hex,
-                                to: valid_move,
-                            });
-                        valid_turns.extend(allowed_moves);
-                    }
-                    Bug::Grasshopper => {
-                        let allowed_moves = self
-                            .allowed_jumps(hex)
-                            .filter(|possible_move| {
-                                !move_would_break_hive(&self.hive, hex, possible_move)
-                            })
-                            .map(|valid_jump| Move {
-                                from: *hex,
-                                to: valid_jump,
-                            });
-                        valid_turns.extend(allowed_moves);
-                    }
-                    Bug::Ant => {
-                        let allowed_moves = self.allowed_ant_destinations(hex).map(|slide| Move {
-                            from: *hex,
-                            to: slide,
-                        });
-                        valid_turns.extend(allowed_moves);
-                    }
-                    Bug::Spider => {
-                        let allowed_moves = self
-                            .allowed_spider_destinations(hex)
-                            .map(|to| Move { from: *hex, to });
-                        valid_turns.extend(allowed_moves);
-                    }
-                    Bug::Ladybug => {
-                        let allowed_moves = self
-                            .allowed_ladybug_destinations(hex)
-                            .map(|to| Move { from: *hex, to });
-                        valid_turns.extend(allowed_moves);
-                    }
-                }
-            }
-        }
-
         valid_turns
     }
 
@@ -411,8 +329,31 @@ impl Game {
 
         valid_turns
     }
+    fn valid_moves(&self) -> Vec<Turn> {
+        let mut valid_turns: Vec<Turn> = Vec::new();
+        if self.active_reserve().contains(&Bug::Queen) {
+            return Vec::new();
+        }
+        for (hex, tile) in self.hive.toplevel_pieces() {
+            if tile.color == self.active_player {
+                let allowed_destinations: Box<dyn Iterator<Item = Hex>> = match tile.bug {
+                    Bug::Beetle => Box::new(self.allowed_beetle_destinations(hex)),
+                    Bug::Queen => Box::new(self.allowed_queen_destinations(hex)),
+                    Bug::Grasshopper => Box::new(self.allowed_grasshopper_destinations(hex)),
+                    Bug::Ant => Box::new(self.allowed_ant_destinations(hex)),
+                    Bug::Spider => Box::new(self.allowed_spider_destinations(hex)),
+                    Bug::Ladybug => Box::new(self.allowed_ladybug_destinations(hex)),
+                };
+                let allowed_turns = allowed_destinations.map(|to| Move { from: *hex, to });
 
-    fn allowed_jumps(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+                valid_turns.extend(allowed_turns)
+            }
+        }
+
+        valid_turns
+    }
+
+    fn allowed_grasshopper_destinations(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
         let mut allowed_jumps = vec![];
         let occupied_neighbors = self.hive.occupied_neighbors_at_same_level(hex);
         for neighbor in occupied_neighbors {
@@ -420,9 +361,33 @@ impl Game {
             let unoccupied_spot = self.hive.next_unoccupied_spot_in_direction(hex, &direction);
             allowed_jumps.push(unoccupied_spot);
         }
-
-        allowed_jumps.into_iter()
+        allowed_jumps
+            .into_iter()
+            .filter(|possible_move| !move_would_break_hive(&self.hive, hex, possible_move))
     }
+
+    fn allowed_queen_destinations(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+        self.allowed_slides(hex, Some(hex))
+            .filter(|possible_move| !move_would_break_hive(&self.hive, hex, possible_move))
+    }
+
+    fn allowed_beetle_destinations(&self, from: &Hex) -> impl Iterator<Item = Hex> {
+        neighbors(from)
+            .filter_map(|neighbor| {
+                let height = self.hive.stack_height(&neighbor);
+                let dest = Hex {
+                    h: height,
+                    ..neighbor
+                };
+                if self.slide_is_allowed(&Hex { h: height, ..*from }, &dest) {
+                    Some(dest)
+                } else {
+                    None
+                }
+            })
+            .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
+    }
+
 
     fn allowed_ladybug_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut paths: Vec<Vec<Hex>> = vec![vec![*start]];
@@ -448,7 +413,10 @@ impl Game {
                 } else {
                     self.hive
                         .topmost_occupied_neighbors(current)
-                        .map(|dest| Hex {h: dest.h + 1, ..dest})
+                        .map(|dest| Hex {
+                            h: dest.h + 1,
+                            ..dest
+                        })
                         .filter(|dest| dest.base_level() != *start)
                         .filter(|dest| {
                             self.slide_is_allowed(
@@ -459,9 +427,7 @@ impl Game {
                                 dest,
                             )
                         })
-                        .filter(|dest| {
-                            !(i == 1 && move_would_break_hive(&self.hive, start, dest))
-                        })
+                        .filter(|dest| !(i == 1 && move_would_break_hive(&self.hive, start, dest)))
                         .collect()
                 };
 
@@ -529,13 +495,6 @@ impl Game {
         unique_destinations.into_iter()
     }
 
-    fn slide_would_separate_self_from_hive(&self, from: &Hex, to: &Hex, ignore_hex: &Hex) -> bool {
-        !self
-            .hive
-            .occupied_neighbors_at_same_level(from)
-            .any(|neighbor| neighbor != *ignore_hex && is_adjacent(&neighbor, to))
-    }
-
     fn allowed_ant_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut current = *start;
         let mut allowed_moves = FxHashSet::default();
@@ -553,7 +512,7 @@ impl Game {
                 // something at each step. I think?!?!?!
                 if first_move && move_would_break_hive(&self.hive, &current, &dest)
                     || !first_move
-                        && self.slide_would_separate_self_from_hive(&current, &dest, start)
+                    && self.slide_would_separate_self_from_hive(&current, &dest, start)
                 {
                     continue;
                 }
@@ -564,6 +523,13 @@ impl Game {
         }
 
         allowed_moves.into_iter()
+    }
+
+    fn slide_would_separate_self_from_hive(&self, from: &Hex, to: &Hex, ignore_hex: &Hex) -> bool {
+        !self
+            .hive
+            .occupied_neighbors_at_same_level(from)
+            .any(|neighbor| neighbor != *ignore_hex && is_adjacent(&neighbor, to))
     }
 
     fn slide_is_allowed(&self, from: &Hex, to: &Hex) -> bool {
