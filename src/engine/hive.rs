@@ -93,6 +93,13 @@ impl Hive {
         height
     }
 
+    pub fn toplevel_pieces(&self) -> impl Iterator<Item = (&Hex, &Tile)> {
+        self
+            .map
+            .iter()
+            .filter(|(hex, _)| self.stack_height(hex) - 1 == hex.h)
+    }
+
     pub fn topmost_occupied_hex(&self, hex: &Hex) -> Option<Hex> {
         let stack_height = self.stack_height(hex);
         if stack_height > 0 {
@@ -134,7 +141,7 @@ impl Hive {
     }
 
     pub fn topmost_occupied_neighbors(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
-        self.neighbors_at_same_level(hex)
+        neighbors(hex)
             .filter_map(|hex| self.topmost_occupied_hex(&hex))
     }
 

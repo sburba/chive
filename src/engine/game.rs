@@ -1,12 +1,12 @@
 use crate::engine::bug::Bug;
 use crate::engine::game::Turn::{Move, Placement};
-use crate::engine::hex::{is_adjacent, neighbors, Hex};
+use crate::engine::hex::{Hex, is_adjacent, neighbors};
 use crate::engine::hive::{Color, Hive, Tile};
 use crate::engine::pathfinding::move_would_break_hive;
 use crate::engine::zobrist::{ZobristHash, ZobristTable};
+use Turn::Skip;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
-use Turn::Skip;
 
 #[derive(Clone)]
 pub struct Game {
@@ -45,6 +45,7 @@ fn default_reserve() -> Vec<Bug> {
         Bug::Grasshopper,
         Bug::Spider,
         Bug::Spider,
+        Bug::Ladybug
     ]
 }
 
@@ -263,12 +264,7 @@ impl Game {
         if self.active_reserve().contains(&Bug::Queen) {
             return Vec::new();
         }
-        let toplevel_pieces = self
-            .hive
-            .map
-            .iter()
-            .filter(|(hex, _)| self.hive.stack_height(hex) - 1 == hex.h);
-        for (hex, tile) in toplevel_pieces {
+        for (hex, tile) in self.hive.toplevel_pieces() {
             if tile.color == self.active_player {
                 match tile.bug {
                     Bug::Beetle => {
@@ -317,20 +313,26 @@ impl Game {
                                 from: *hex,
                                 to: valid_jump,
                             });
-                        valid_turns.extend(allowed_moves)
+                        valid_turns.extend(allowed_moves);
                     }
                     Bug::Ant => {
                         let allowed_moves = self.allowed_ant_destinations(hex).map(|slide| Move {
                             from: *hex,
                             to: slide,
                         });
-                        valid_turns.extend(allowed_moves)
+                        valid_turns.extend(allowed_moves);
                     }
                     Bug::Spider => {
                         let allowed_moves = self
                             .allowed_spider_destinations(hex)
                             .map(|to| Move { from: *hex, to });
-                        valid_turns.extend(allowed_moves)
+                        valid_turns.extend(allowed_moves);
+                    }
+                    Bug::Ladybug => {
+                        let allowed_moves = self
+                            .allowed_ladybug_destinations(hex)
+                            .map(|to| Move { from: *hex, to });
+                        valid_turns.extend(allowed_moves);
                     }
                 }
             }
@@ -422,13 +424,75 @@ impl Game {
         allowed_jumps.into_iter()
     }
 
-    fn allowed_spider_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
+    fn allowed_ladybug_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut paths: Vec<Vec<Hex>> = vec![vec![*start]];
+        let mut new_paths: Vec<Vec<Hex>> = vec![];
 
         for i in 1..=3 {
-            let mut new_paths: Vec<Vec<Hex>> = vec![];
+            let last_move = i == 3;
+            for path in paths.iter() {
+                let current = path.last().unwrap();
+                let dests: Vec<Hex> = if last_move {
+                    self.hive
+                        .unoccupied_neighbors(&Hex { h: 0, ..*current })
+                        .filter(|dest| {
+                            self.slide_is_allowed(
+                                current,
+                                &Hex {
+                                    h: current.h,
+                                    ..*dest
+                                },
+                            )
+                        })
+                        .collect()
+                } else {
+                    self.hive
+                        .topmost_occupied_neighbors(current)
+                        .map(|dest| Hex {h: dest.h + 1, ..dest})
+                        .filter(|dest| dest.base_level() != *start)
+                        .filter(|dest| {
+                            self.slide_is_allowed(
+                                &Hex {
+                                    h: dest.h,
+                                    ..*current
+                                },
+                                dest,
+                            )
+                        })
+                        .filter(|dest| {
+                            !(i == 1 && move_would_break_hive(&self.hive, start, dest))
+                        })
+                        .collect()
+                };
+
+                for dest in dests {
+                    let mut new_path = path.clone();
+                    new_path.push(dest);
+                    new_paths.push(new_path);
+                }
+            }
+            // Allow us to re-use new_paths without allocating new memory
+            // the old value of paths is no longer needed
+            std::mem::swap(&mut paths, &mut new_paths);
+            new_paths.clear();
+        }
+
+        let unique_destinations: FxHashSet<Hex> = FxHashSet::from_iter(
+            paths
+                .into_iter()
+                .filter(|path| path.len() == 4)
+                .map(|path| *path.last().unwrap()),
+        );
+        unique_destinations.into_iter()
+    }
+
+    fn allowed_spider_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
+        let mut paths: Vec<Vec<Hex>> = vec![vec![*start]];
+        let mut new_paths: Vec<Vec<Hex>> = vec![];
+
+        for i in 1..=3 {
             let first_move = i == 1;
-            for path in paths {
+            for path in paths.iter() {
                 let current = path.last().unwrap();
                 for dest in self.allowed_slides(current, Some(start)) {
                     if path.contains(&dest) {
@@ -448,7 +512,11 @@ impl Game {
                     new_paths.push(new_path);
                 }
             }
-            paths = new_paths;
+
+            // Allow us to re-use new_paths without allocating new memory
+            // the old value of paths is no longer needed
+            std::mem::swap(&mut paths, &mut new_paths);
+            new_paths.clear();
         }
 
         let mut unique_destinations: FxHashSet<Hex> = FxHashSet::default();
@@ -956,6 +1024,92 @@ mod tests {
             .  .  Q
              .  .  a
         "#,
+        );
+    }
+
+    #[test]
+    fn test_beetle_cannot_break_slide_rules_when_mounting() {
+        assert_moves(
+            r#"
+            Layer 0
+            .  a  a
+             a  B  *
+            .  *  .
+            Layer 1
+            .  .  b
+             b  .  .
+            .  .  .
+            Layer 2
+            .  .  *
+             *  .  .
+            .  .  .
+            "#,
+        )
+    }
+
+    #[test]
+    fn test_ladybug_movement() {
+        assert_moves(
+            r#"
+            .  *  *
+             *  a  *
+            .  a  *
+             .  L  .
+            "#,
+        );
+    }
+
+    #[test]
+    fn test_ladybug_can_traverse_any_height() {
+        assert_moves(
+            r#"
+            Layer 0
+            .  *  *
+             *  a  *
+            .  a  *
+             .  L  .
+            Layer 1
+            .  .  .
+             .  B  .
+            .  .  .
+             .  .  .
+            Layer 2
+            .  .  .
+             .  b  .
+            .  .  .
+             .  .  .
+            "#,
+        );
+    }
+
+    #[test]
+    fn test_ladybug_cant_make_illegal_slides() {
+        assert_moves(
+            r#"
+            Layer 0
+            .  .  a  .
+             q  a  *  .
+            .  *  a  .
+             .  .  L  .
+            Layer 1
+            .  .  b  .
+             b  .  .  .
+            .  .  .  .
+             .  .  .  .
+            "#,
+        );
+    }
+
+    #[test]
+    fn test_ladybug_cant_break_hive() {
+        assert_moves(
+            r#"
+            .  .  .  .
+             .  a  .  .
+            .  .  a  .
+             .  .  L  .
+            .  .  .  a
+            "#,
         );
     }
 

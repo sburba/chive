@@ -11,6 +11,7 @@ pub enum Bug {
     Grasshopper,
     Queen,
     Spider,
+    Ladybug,
 }
 
 impl Display for Bug {
@@ -24,6 +25,7 @@ impl Display for Bug {
                 Bug::Grasshopper => "G",
                 Bug::Ant => "A",
                 Bug::Spider => "S",
+                Bug::Ladybug => "L",
             }
         )
     }
@@ -39,6 +41,7 @@ impl FromStr for Bug {
             "G" => Ok(Bug::Grasshopper),
             "A" => Ok(Bug::Ant),
             "S" => Ok(Bug::Spider),
+            "L" => Ok(Bug::Ladybug),
             _ => Err(InvalidBugCharacter(s.to_string())),
         }
     }
