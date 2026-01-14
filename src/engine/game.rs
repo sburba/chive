@@ -32,6 +32,8 @@ pub enum GameResult {
     Winner { color: Color },
 }
 
+const DEFAULT_RESERVE_SIZE: usize = 13;
+
 fn default_reserve() -> Vec<Bug> {
     vec![
         Bug::Queen,
@@ -46,6 +48,7 @@ fn default_reserve() -> Vec<Bug> {
         Bug::Spider,
         Bug::Spider,
         Bug::Ladybug,
+        Bug::Mosquito
     ]
 }
 
@@ -300,7 +303,7 @@ impl Game {
         let mut placement_allowed: FxHashMap<Hex, bool> = FxHashMap::default();
         let mut valid_turns: Vec<Turn> = Vec::new();
         let reserve =
-            if active_player_reserve.len() <= 8 && active_player_reserve.contains(&Bug::Queen) {
+            if active_player_reserve.len() <= DEFAULT_RESERVE_SIZE - 3 && active_player_reserve.contains(&Bug::Queen) {
                 &vec![Bug::Queen]
             } else {
                 active_player_reserve
@@ -336,21 +339,30 @@ impl Game {
         }
         for (hex, tile) in self.hive.toplevel_pieces() {
             if tile.color == self.active_player {
-                let allowed_destinations: Box<dyn Iterator<Item = Hex>> = match tile.bug {
-                    Bug::Beetle => Box::new(self.allowed_beetle_destinations(hex)),
-                    Bug::Queen => Box::new(self.allowed_queen_destinations(hex)),
-                    Bug::Grasshopper => Box::new(self.allowed_grasshopper_destinations(hex)),
-                    Bug::Ant => Box::new(self.allowed_ant_destinations(hex)),
-                    Bug::Spider => Box::new(self.allowed_spider_destinations(hex)),
-                    Bug::Ladybug => Box::new(self.allowed_ladybug_destinations(hex)),
-                };
-                let allowed_turns = allowed_destinations.map(|to| Move { from: *hex, to });
-
+                let allowed_turns = self
+                    .allowed_destinations(tile.bug, hex)
+                    .map(|to| Move { from: *hex, to });
                 valid_turns.extend(allowed_turns)
             }
         }
 
         valid_turns
+    }
+
+    fn allowed_destinations<'a>(
+        &'a self,
+        bug: Bug,
+        hex: &'a Hex,
+    ) -> Box<dyn Iterator<Item = Hex> + 'a> {
+        match bug {
+            Bug::Beetle => Box::new(self.allowed_beetle_destinations(&hex)),
+            Bug::Queen => Box::new(self.allowed_queen_destinations(&hex)),
+            Bug::Grasshopper => Box::new(self.allowed_grasshopper_destinations(&hex)),
+            Bug::Ant => Box::new(self.allowed_ant_destinations(&hex)),
+            Bug::Spider => Box::new(self.allowed_spider_destinations(&hex)),
+            Bug::Ladybug => Box::new(self.allowed_ladybug_destinations(&hex)),
+            Bug::Mosquito => Box::new(self.allowed_mosquito_destinations(&hex)),
+        }
     }
 
     fn allowed_grasshopper_destinations(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
@@ -387,7 +399,6 @@ impl Game {
             })
             .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
     }
-
 
     fn allowed_ladybug_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
         let mut paths: Vec<Vec<Hex>> = vec![vec![*start]];
@@ -523,6 +534,15 @@ impl Game {
         }
 
         allowed_moves.into_iter()
+    }
+
+    fn allowed_mosquito_destinations<'a>(&'a self, hex: &'a Hex) -> impl Iterator<Item = Hex> + 'a {
+        self.hive
+            .topmost_occupied_neighbors(hex)
+            .map(|hex| self.hive.map.get(&hex).unwrap().bug)
+            // Not allowed to copy other mosquitos
+            .filter(|bug| *bug != Bug::Mosquito)
+            .flat_map(|bug| self.allowed_destinations(bug, hex))
     }
 
     fn slide_would_separate_self_from_hive(&self, from: &Hex, to: &Hex, ignore_hex: &Hex) -> bool {
@@ -1090,5 +1110,32 @@ mod tests {
             .  .  *  *
         "#,
         );
+    }
+
+    #[test]
+    fn test_mosquito_can_copy_queen() {
+        assert_moves(r#"
+        .  .  .
+         .  q  *
+        .  *  M
+        "#)
+    }
+
+    #[test]
+    fn test_mosquito_can_copy_multiple_abilities() {
+        assert_moves(r#"
+        .  *  .  *
+         .  q  g  .
+        .  *  M  *
+        "#)
+    }
+
+    #[test]
+    fn test_mosquito_cannot_copy_another_mosquito() {
+        assert_moves(r#"
+        .  q  .
+         .  m  .
+        .  .  M
+        "#);
     }
 }
