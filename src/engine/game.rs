@@ -7,6 +7,7 @@ use crate::engine::zobrist::{ZobristHash, ZobristTable};
 use Turn::Skip;
 use itertools::Itertools;
 use rustc_hash::{FxHashMap, FxHashSet};
+use std::cmp::max;
 
 #[derive(Clone)]
 pub struct Game {
@@ -48,7 +49,7 @@ fn default_reserve() -> Vec<Bug> {
         Bug::Spider,
         Bug::Spider,
         Bug::Ladybug,
-        Bug::Mosquito
+        Bug::Mosquito,
     ]
 }
 
@@ -302,12 +303,13 @@ impl Game {
 
         let mut placement_allowed: FxHashMap<Hex, bool> = FxHashMap::default();
         let mut valid_turns: Vec<Turn> = Vec::new();
-        let reserve =
-            if active_player_reserve.len() <= DEFAULT_RESERVE_SIZE - 3 && active_player_reserve.contains(&Bug::Queen) {
-                &vec![Bug::Queen]
-            } else {
-                active_player_reserve
-            };
+        let reserve = if active_player_reserve.len() <= DEFAULT_RESERVE_SIZE - 3
+            && active_player_reserve.contains(&Bug::Queen)
+        {
+            &vec![Bug::Queen]
+        } else {
+            active_player_reserve
+        };
 
         for (hex, tile) in self.hive.map.iter() {
             if tile.color == self.active_player {
@@ -386,13 +388,24 @@ impl Game {
     fn allowed_beetle_destinations(&self, from: &Hex) -> impl Iterator<Item = Hex> {
         neighbors(from)
             .filter_map(|neighbor| {
-                let height = self.hive.stack_height(&neighbor);
-                let dest = Hex {
-                    h: height,
-                    ..neighbor
-                };
-                if self.slide_is_allowed(&Hex { h: height, ..*from }, &dest) {
-                    Some(dest)
+                let to_height = self.hive.stack_height(&neighbor);
+                // If we're moving up, we need to check if we're blocked from the level above
+                // If we're moving down, we need to check if we're blocked at our level
+                let slide_check_height = max(from.h, to_height);
+                if self.slide_is_allowed(
+                    &Hex {
+                        h: slide_check_height,
+                        ..*from
+                    },
+                    &Hex {
+                        h: slide_check_height,
+                        ..neighbor
+                    },
+                ) {
+                    Some(Hex {
+                        h: to_height,
+                        ..neighbor
+                    })
                 } else {
                     None
                 }
@@ -523,7 +536,7 @@ impl Game {
                 // something at each step. I think?!?!?!
                 if first_move && move_would_break_hive(&self.hive, &current, &dest)
                     || !first_move
-                    && self.slide_would_separate_self_from_hive(&current, &dest, start)
+                        && self.slide_would_separate_self_from_hive(&current, &dest, start)
                 {
                     continue;
                 }
@@ -685,6 +698,10 @@ mod tests {
     }
 
     fn assert_moves(moves: &str) {
+        assert_moves_for_hex(moves, None)
+    }
+
+    fn assert_moves_for_hex(moves: &str, only_for_hex: Option<Hex>) {
         let moves_map = parse_hex_map_string(moves).unwrap();
         let (from, _) = moves_map
             .iter()
@@ -708,6 +725,13 @@ mod tests {
         let game = Game::from_hive_with_reserves(hive, Color::White, vec![], vec![]);
 
         let mut actual_turns: Vec<Turn> = game.valid_turns();
+
+        if let Some(hex) = only_for_hex {
+            actual_turns.retain(|turn| match turn {
+                Move { from, .. } => *from == hex,
+                _ => false,
+            });
+        }
 
         expected_turns.sort();
         actual_turns.sort();
@@ -862,6 +886,22 @@ mod tests {
              .  .  .
             .  .  .
         "#,
+        );
+    }
+
+    #[test]
+    fn test_beetle_can_slide_down() {
+        assert_moves(
+            r#"
+            Layer 0
+            .  *  a
+             a  q  *
+            .  *  *
+            Layer 1
+            .  .  *
+             *  B  .
+            .  .  .
+            "#,
         );
     }
 
@@ -1114,28 +1154,34 @@ mod tests {
 
     #[test]
     fn test_mosquito_can_copy_queen() {
-        assert_moves(r#"
+        assert_moves(
+            r#"
         .  .  .
          .  q  *
         .  *  M
-        "#)
+        "#,
+        )
     }
 
     #[test]
     fn test_mosquito_can_copy_multiple_abilities() {
-        assert_moves(r#"
+        assert_moves(
+            r#"
         .  *  .  *
          .  q  g  .
         .  *  M  *
-        "#)
+        "#,
+        )
     }
 
     #[test]
     fn test_mosquito_cannot_copy_another_mosquito() {
-        assert_moves(r#"
+        assert_moves(
+            r#"
         .  q  .
          .  m  .
         .  .  M
-        "#);
+        "#,
+        );
     }
 }
