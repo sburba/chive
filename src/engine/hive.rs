@@ -188,39 +188,3 @@ impl FromStr for Hive {
         Hive::from_hex_map(&hex_map)
     }
 }
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use pretty_assertions::assert_eq;
-
-    #[test]
-    fn test_parse_map() {
-        let map_str = r#"
-    Layer 0
-      G  .  .
-     .  B  a
-      a  q  .
-
-    Layer 1
-      .  .  .
-     .  .  .
-      b  .  .
-    "#;
-
-        let hive: Hive = map_str.parse().unwrap();
-
-        assert_eq!(
-            normalize_whitespace(&hive.to_string()),
-            normalize_whitespace(map_str)
-        )
-    }
-
-    fn normalize_whitespace(s: &str) -> String {
-        s.trim()
-            .lines()
-            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-}

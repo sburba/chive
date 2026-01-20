@@ -16,6 +16,7 @@ clap = { version = "4.5.51", features = ["derive"] }
 
 [dev-dependencies]
 pretty_assertions = "1.4.1"
+proptest = "1.9.0"
 
 [profile.game-dev]
 inherits = "dev"

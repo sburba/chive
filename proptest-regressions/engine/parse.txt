@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a889aeb33f4f7a5e6b488906c51fae7f0e5e58304180f715727358da2d7eb5b0 # shrinks to s = "i"
+cc 05b07d01b258d5028038dc6c532d4a94ed3e4649d13c54c5edc2cea7193078d0 # shrinks to map = {Hex { q: 0, r: 0, h: 0 }: " "}
+cc c12102e9cd9a9adfcea7f4fc9b2200bf7fdf0cb598fb437b2f124c2bd2111a14 # shrinks to map = {Hex { q: 0, r: 0, h: 0 }: "a"}

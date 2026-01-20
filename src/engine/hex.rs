@@ -8,15 +8,57 @@ pub struct Hex {
     pub h: i32,
 }
 
+#[repr(i32)]
+#[derive(Copy, Clone, EnumIter, Debug)]
+pub enum RotationDegrees {
+    Sixty = 60,
+    OneTwenty = 120,
+    OneEighty = 180,
+    TwoForty = 240,
+    ThreeHundred = 300,
+    ThreeSixty = 360,
+}
+
+impl RotationDegrees {
+    fn as_int(&self) -> i32 {
+        *self as i32
+    }
+}
+
 impl Hex {
     pub fn s(&self) -> i32 {
         -self.q - self.r
     }
 
     pub fn base_level(&self) -> Hex {
-        Hex {
-            h: 0,
-            ..*self
+        Hex { h: 0, ..*self }
+    }
+
+    pub fn rotated_by(&self, degrees: RotationDegrees) -> Hex {
+        // To rotate 60 degrees clockwise you multiply q, r, and s by negative one and shift the coordinate
+        // one to the left. Repeat the process on the result to go another 60 deg.
+        let deg = degrees.as_int();
+        let num_rotations = deg / 60;
+        let multiplier = if num_rotations % 2 == 1 { -1 } else { 1 };
+        match num_rotations % 3 {
+            0 => Hex {
+                q: self.q * multiplier,
+                r: self.r * multiplier,
+                h: self.h,
+            },
+            1 => Hex {
+                q: self.r * multiplier,
+                r: self.s() * multiplier,
+                h: self.h,
+            },
+            2 => Hex {
+                q: self.s() * multiplier,
+                r: self.q * multiplier,
+                h: self.h,
+            },
+            res => panic!(
+                "A positive number mod 3 must be between 0 and 2, got {res} for {num_rotations} % 3"
+            ),
         }
     }
 }
@@ -145,10 +187,10 @@ mod tests {
     fn test_s() {
         // Verify the following equality:
         // q + r + s == 0
-        assert_eq!(-2, Hex {q: 1, r: 1, h: 0}.s());
-        assert_eq!(-1, Hex {q: 0, r: 1, h: 0}.s());
-        assert_eq!(-1, Hex {q: 1, r: 0, h: 0}.s());
-        assert_eq!(1, Hex {q: -1, r: 0, h: 0}.s());
+        assert_eq!(-2, Hex { q: 1, r: 1, h: 0 }.s());
+        assert_eq!(-1, Hex { q: 0, r: 1, h: 0 }.s());
+        assert_eq!(-1, Hex { q: 1, r: 0, h: 0 }.s());
+        assert_eq!(1, Hex { q: -1, r: 0, h: 0 }.s());
     }
 
     #[test]
