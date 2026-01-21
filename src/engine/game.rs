@@ -341,51 +341,48 @@ impl Game {
         }
         for (hex, tile) in self.hive.toplevel_pieces() {
             if tile.color == self.active_player {
-                let allowed_turns = self
-                    .allowed_destinations(tile.bug, hex)
-                    .map(|to| Move { from: *hex, to });
-                valid_turns.extend(allowed_turns)
+                self.add_allowed_moves(&mut valid_turns, tile.bug, hex);
             }
         }
 
         valid_turns
     }
 
-    fn allowed_destinations<'a>(
-        &'a self,
-        bug: Bug,
-        hex: &'a Hex,
-    ) -> Box<dyn Iterator<Item = Hex> + 'a> {
+    fn add_allowed_moves(&self, turns: &mut Vec<Turn>, bug: Bug, hex: &Hex) {
         match bug {
-            Bug::Beetle => Box::new(self.allowed_beetle_destinations(&hex)),
-            Bug::Queen => Box::new(self.allowed_queen_destinations(&hex)),
-            Bug::Grasshopper => Box::new(self.allowed_grasshopper_destinations(&hex)),
-            Bug::Ant => Box::new(self.allowed_ant_destinations(&hex)),
-            Bug::Spider => Box::new(self.allowed_spider_destinations(&hex)),
-            Bug::Ladybug => Box::new(self.allowed_ladybug_destinations(&hex)),
-            Bug::Mosquito => Box::new(self.allowed_mosquito_destinations(&hex)),
+            Bug::Beetle => turns.extend(self.beetle_moves(&hex)),
+            Bug::Queen => turns.extend(self.queen_moves(&hex)),
+            Bug::Grasshopper => turns.extend(self.grasshopper_moves(&hex)),
+            Bug::Ant => turns.extend(self.ant_moves(&hex)),
+            Bug::Spider => turns.extend(self.spider_moves(&hex)),
+            Bug::Ladybug => turns.extend(self.ladybug_moves(&hex)),
+            Bug::Mosquito => turns.extend(self.mosquito_moves(&hex)),
         }
     }
 
-    fn allowed_grasshopper_destinations(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
+    fn grasshopper_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         let mut allowed_jumps = vec![];
-        let occupied_neighbors = self.hive.occupied_neighbors_at_same_level(hex);
+        let occupied_neighbors = self.hive.occupied_neighbors_at_same_level(from);
         for neighbor in occupied_neighbors {
-            let direction = neighbor - *hex;
-            let unoccupied_spot = self.hive.next_unoccupied_spot_in_direction(hex, &direction);
+            let direction = neighbor - *from;
+            let unoccupied_spot = self
+                .hive
+                .next_unoccupied_spot_in_direction(from, &direction);
             allowed_jumps.push(unoccupied_spot);
         }
         allowed_jumps
             .into_iter()
-            .filter(|possible_move| !move_would_break_hive(&self.hive, hex, possible_move))
+            .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
+            .map(|to| Move { from: *from, to })
     }
 
-    fn allowed_queen_destinations(&self, hex: &Hex) -> impl Iterator<Item = Hex> {
-        self.allowed_slides(hex, Some(hex))
-            .filter(|possible_move| !move_would_break_hive(&self.hive, hex, possible_move))
+    fn queen_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
+        self.allowed_slides(from, Some(from))
+            .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
+            .map(|to| Move { from: *from, to })
     }
 
-    fn allowed_beetle_destinations(&self, from: &Hex) -> impl Iterator<Item = Hex> {
+    fn beetle_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         neighbors(from)
             .filter_map(|neighbor| {
                 let to_height = self.hive.stack_height(&neighbor);
@@ -411,10 +408,11 @@ impl Game {
                 }
             })
             .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
+            .map(|to| Move { from: *from, to })
     }
 
-    fn allowed_ladybug_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
-        let mut paths: Vec<Vec<Hex>> = vec![vec![*start]];
+    fn ladybug_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
+        let mut paths: Vec<Vec<Hex>> = vec![vec![*from]];
         let mut new_paths: Vec<Vec<Hex>> = vec![];
 
         for i in 1..=3 {
@@ -441,7 +439,7 @@ impl Game {
                             h: dest.h + 1,
                             ..dest
                         })
-                        .filter(|dest| dest.base_level() != *start)
+                        .filter(|dest| dest.base_level() != *from)
                         .filter(|dest| {
                             self.slide_is_allowed(
                                 &Hex {
@@ -451,7 +449,7 @@ impl Game {
                                 dest,
                             )
                         })
-                        .filter(|dest| !(i == 1 && move_would_break_hive(&self.hive, start, dest)))
+                        .filter(|dest| !(i == 1 && move_would_break_hive(&self.hive, from, dest)))
                         .collect()
                 };
 
@@ -473,18 +471,20 @@ impl Game {
                 .filter(|path| path.len() == 4)
                 .map(|path| *path.last().unwrap()),
         );
-        unique_destinations.into_iter()
+        unique_destinations
+            .into_iter()
+            .map(|to| Move { from: *from, to })
     }
 
-    fn allowed_spider_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
-        let mut paths: Vec<Vec<Hex>> = vec![vec![*start]];
+    fn spider_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
+        let mut paths: Vec<Vec<Hex>> = vec![vec![*from]];
         let mut new_paths: Vec<Vec<Hex>> = vec![];
 
         for i in 1..=3 {
             let first_move = i == 1;
             for path in paths.iter() {
                 let current = path.last().unwrap();
-                for dest in self.allowed_slides(current, Some(start)) {
+                for dest in self.allowed_slides(current, Some(from)) {
                     if path.contains(&dest) {
                         continue;
                     }
@@ -492,7 +492,7 @@ impl Game {
                     // something at each step. I think?!?!?!
                     if first_move && move_would_break_hive(&self.hive, current, &dest)
                         || !first_move
-                            && self.slide_would_separate_self_from_hive(current, &dest, start)
+                            && self.slide_would_separate_self_from_hive(current, &dest, from)
                     {
                         continue;
                     }
@@ -516,11 +516,13 @@ impl Game {
                 .filter(|path| path.len() == 4)
                 .map(|path| *path.last().unwrap()),
         );
-        unique_destinations.into_iter()
+        unique_destinations
+            .into_iter()
+            .map(|to| Move { from: *from, to })
     }
 
-    fn allowed_ant_destinations(&self, start: &Hex) -> impl Iterator<Item = Hex> {
-        let mut current = *start;
+    fn ant_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
+        let mut current = *from;
         let mut allowed_moves = FxHashSet::default();
         let mut frontier: Vec<Hex> = vec![];
         frontier.push(current);
@@ -528,15 +530,15 @@ impl Game {
         let mut first_move = true;
         while !frontier.is_empty() {
             current = frontier.pop().unwrap();
-            for dest in self.allowed_slides(&current, Some(start)) {
-                if allowed_moves.contains(&dest) || *start == dest {
+            for dest in self.allowed_slides(&current, Some(from)) {
+                if allowed_moves.contains(&dest) || *from == dest {
                     continue;
                 }
                 // The ant can only break the hive on its first move as long as it is adjacent to
                 // something at each step. I think?!?!?!
                 if first_move && move_would_break_hive(&self.hive, &current, &dest)
                     || !first_move
-                        && self.slide_would_separate_self_from_hive(&current, &dest, start)
+                        && self.slide_would_separate_self_from_hive(&current, &dest, from)
                 {
                     continue;
                 }
@@ -546,16 +548,22 @@ impl Game {
             first_move = false;
         }
 
-        allowed_moves.into_iter()
+        allowed_moves.into_iter().map(|to| Move { from: *from, to })
     }
 
-    fn allowed_mosquito_destinations<'a>(&'a self, hex: &'a Hex) -> impl Iterator<Item = Hex> + 'a {
-        self.hive
-            .topmost_occupied_neighbors(hex)
+    fn mosquito_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
+        let adjacent_bugs = self.hive
+            .topmost_occupied_neighbors(from)
             .map(|hex| self.hive.map.get(&hex).unwrap().bug)
             // Not allowed to copy other mosquitos
-            .filter(|bug| *bug != Bug::Mosquito)
-            .flat_map(|bug| self.allowed_destinations(bug, hex))
+            .filter(|bug| *bug != Bug::Mosquito);
+
+        let mut turns: Vec<Turn> = Vec::new();
+        for bug in adjacent_bugs {
+            self.add_allowed_moves(&mut turns, bug, from)
+        }
+
+        turns.into_iter()
     }
 
     fn slide_would_separate_self_from_hive(&self, from: &Hex, to: &Hex, ignore_hex: &Hex) -> bool {
