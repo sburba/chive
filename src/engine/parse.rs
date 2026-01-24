@@ -116,8 +116,8 @@ pub fn hex_map_to_string(hex_map: &FxHashMap<Hex, String>) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::engine::canonicalizer::canonicalize;
     use proptest::prelude::*;
+    use crate::engine::canonicalizer::canonicalize;
 
     fn hex_strategy() -> impl Strategy<Value = Hex> {
         (-5..=5, -5..=5, 0..=2).prop_map(|(q, r, h)| Hex { q, r, h })

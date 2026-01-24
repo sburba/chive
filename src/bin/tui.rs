@@ -1,4 +1,5 @@
 use crate::AppError::AiError;
+use crate::SelectionState::{PieceSelected, PushingPiece};
 use chive::engine::ai::Ai;
 use chive::engine::bug::Bug;
 use chive::engine::game::{Game, GameResult, Turn};
@@ -16,19 +17,24 @@ use ratatui::prelude::Direction;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Span};
 use ratatui::{DefaultTerminal, Frame};
-use rustc_hash::FxHashSet;
 use std::cmp::max;
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 use thiserror::Error;
 
+enum SelectionState {
+    None,
+    PieceSelected { pos: Hex },
+    PushingPiece { pillbug_pos: Hex, push_target: Hex },
+}
+
 struct App {
     game: Game,
     ai: Ai,
     cursor_pos: RowCol,
     player_color: Color,
-    selected_pos: Option<RowCol>,
+    selection: SelectionState,
     last_ai_move_pos: Option<RowCol>,
 }
 
@@ -65,7 +71,7 @@ impl App {
     fn last_affected_row_col(&self, turn: &Turn) -> Option<RowCol> {
         match turn {
             Turn::Placement { hex, tile: _ } => Some(RowCol::from_hex(hex)),
-            Turn::Move { from: _, to } => Some(RowCol::from_hex(to)),
+            Turn::Move { to, .. } => Some(RowCol::from_hex(to)),
             Turn::Skip => self.last_ai_move_pos,
         }
     }
@@ -134,7 +140,7 @@ impl App {
                     }
                     KeyEvent {
                         code: KeyCode::Esc, ..
-                    } => self.selected_pos = None,
+                    } => self.selection = SelectionState::None,
                     KeyEvent {
                         code: KeyCode::Enter,
                         ..
@@ -178,31 +184,71 @@ impl App {
     }
 
     fn handle_enter(&mut self) {
-        if self.selected_pos.is_none() {
-            self.selected_pos = self
-                .game
-                .hive
-                .topmost_occupied_hex(&self.cursor_pos.to_hex())
-                .filter(|hex| {
-                    self.game
-                        .hive
-                        .tile_at(hex)
-                        .is_some_and(|tile| tile.color == self.player_color)
-                })
-                .map(|hex: Hex| RowCol::from_hex(&hex))
-        } else if self.selected_pos == Some(self.cursor_pos) {
-            self.selected_pos = None;
-        } else {
-            let turn = Turn::Move {
-                from: self.selected_pos.unwrap().to_hex(),
-                to: self
+        match self.selection {
+            SelectionState::None => {
+                self.selection = self
                     .game
                     .hive
-                    .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
-            };
-            if self.game.turn_is_valid(turn) {
-                self.game = self.game.with_turn_applied(turn);
-                self.selected_pos = None
+                    .topmost_occupied_hex(&self.cursor_pos.to_hex())
+                    .filter(|hex| {
+                        self.game
+                            .hive
+                            .tile_at(hex)
+                            .is_some_and(|tile| tile.color == self.player_color)
+                    })
+                    .map_or(SelectionState::None, |hex| PieceSelected { pos: hex });
+            }
+            PieceSelected { pos } if pos == self.cursor_pos.to_hex() => {
+                self.selection = SelectionState::None;
+            }
+            PieceSelected { pos } => {
+                let pillbug_selected = self
+                    .game
+                    .hive
+                    .tile_at(&pos)
+                    .is_some_and(|tile| tile.bug == Bug::Pillbug);
+
+                let is_pushable_piece = pillbug_selected
+                    && self.game.moves_for_piece(&pos).any(|mv| match mv {
+                        Turn::Move { from, .. } if self.cursor_pos.to_hex() == from => true,
+                        _ => false,
+                    });
+
+                if is_pushable_piece {
+                    self.selection = PushingPiece {
+                        pillbug_pos: pos,
+                        push_target: self.cursor_pos.to_hex(),
+                    }
+                } else {
+                    let turn = Turn::Move {
+                        from: pos,
+                        to: self
+                            .game
+                            .hive
+                            .bottommost_unoccupied_hex(&self.cursor_pos.to_hex()),
+                        freezes_piece: false,
+                    };
+
+                    if self.game.turn_is_valid(turn) {
+                        self.game = self.game.with_turn_applied(turn);
+                        self.selection = SelectionState::None;
+                    }
+                }
+            }
+            PushingPiece { push_target, pillbug_pos: pusher } => {
+                if self.cursor_pos.to_hex() == push_target {
+                    self.selection = PieceSelected { pos: pusher };
+                } else {
+                    let turn = Turn::Move {
+                        from: push_target,
+                        to: self.cursor_pos.to_hex(),
+                        freezes_piece: true,
+                    };
+                    if self.game.turn_is_valid(turn) {
+                        self.game = self.game.with_turn_applied(turn);
+                        self.selection = SelectionState::None;
+                    }
+                }
             }
         }
     }
@@ -313,14 +359,41 @@ impl App {
                 }
             });
 
-        let valid_move_positions = if let Some(piece) = self.selected_pos {
-            self.game
-                .valid_destinations_for_piece(&piece.to_hex())
-                .map(|hex| RowCol::from_hex(&Hex { h: 0, ..hex }))
-                .collect()
-        } else {
-            FxHashSet::default()
-        };
+        let mut possible_destinations = vec![];
+        let mut pushable_pieces = vec![];
+
+        match self.selection {
+            SelectionState::None => {}
+            PieceSelected { pos } => {
+                for mv in self.game.moves_for_piece(&pos) {
+                    match mv {
+                        Turn::Move { from, to, .. } => {
+                            if from == pos {
+                                possible_destinations.push(RowCol::from_hex(&to))
+                            } else {
+                                pushable_pieces.push(RowCol::from_hex(&from))
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            PushingPiece {
+                pillbug_pos,
+                push_target,
+            } => {
+                for mv in self.game.moves_for_piece(&pillbug_pos) {
+                    match mv {
+                        Turn::Move { from, to, .. } => {
+                            if from == push_target {
+                                possible_destinations.push(RowCol::from_hex(&to))
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
 
         let default = Span::from(".");
         for (i, cell) in cells.enumerate() {
@@ -345,14 +418,20 @@ impl App {
                 .top_tile_at(&hex)
                 .map(tile_to_span)
                 .unwrap_or(default.clone());
-            if Some(row_col) == self.selected_pos {
-                text = text.slow_blink();
+
+            match self.selection {
+                PieceSelected { pos } if pos == hex => text = text.slow_blink(),
+                PushingPiece { push_target, .. } if push_target == hex => text = text.slow_blink(),
+                _ => {}
             }
+
             if self.game.hive.stack_height(&hex) > 1 {
                 text = text.underlined()
             }
-            if valid_move_positions.contains(&row_col) {
+            if possible_destinations.contains(&row_col) {
                 text = text.on_green();
+            } else if pushable_pieces.contains(&row_col) {
+                text = text.underlined();
             } else if Some(row_col) == self.last_ai_move_pos {
                 text = text.on_magenta()
             }
@@ -422,7 +501,7 @@ fn main() {
         ),
         cursor_pos: Default::default(),
         player_color: args.player_color,
-        selected_pos: None,
+        selection: SelectionState::None,
         last_ai_move_pos: None,
     };
     let result = app.run(terminal);

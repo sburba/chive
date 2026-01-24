@@ -61,16 +61,16 @@ mod test {
     use proptest::prelude::*;
     use rustc_hash::FxHashMap;
 
-    fn hex_strategy() -> impl Strategy<Value = Hex> {
+    fn hex_strategy() -> impl Strategy<Value=Hex> {
         (-5..=5, -5..=5, 0..=2).prop_map(|(q, r, h)| Hex { q, r, h })
     }
 
-    fn hex_map_strategy() -> impl Strategy<Value = FxHashMap<Hex, String>> {
+    fn hex_map_strategy() -> impl Strategy<Value=FxHashMap<Hex, String>> {
         prop::collection::hash_map(hex_strategy(), r"[a-zA-Z]", 1..=42)
             .prop_map(|map| map.into_iter().collect())
     }
 
-    fn rotation_strategy() -> impl Strategy<Value = RotationDegrees> {
+    fn rotation_strategy() -> impl Strategy<Value=RotationDegrees> {
         proptest::sample::select(RotationDegrees::iter().collect::<Vec<_>>())
     }
 

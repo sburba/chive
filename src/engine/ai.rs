@@ -55,7 +55,7 @@ impl minimax::Game for HiveGame {
     type M = Turn;
 
     fn generate_moves(state: &Self::S, moves: &mut Vec<Self::M>) {
-        moves.extend(state.valid_turns())
+        moves.extend(state.turns())
     }
 
     fn apply(state: &mut Self::S, m: Self::M) -> Option<Self::S> {
@@ -115,7 +115,7 @@ impl Evaluator for PiecesAroundQueenAndAvailableMoves {
         let inactive_player_pieces_around_queen =
             *statuses.get(&s.active_player.opposite()).unwrap_or(&0);
         let active_player_pieces_around_queen = *statuses.get(&s.active_player).unwrap_or(&0);
-        let active_player_available_moves = s.valid_turns().len() as i16;
+        let active_player_available_moves = s.turns().count() as i16;
         (inactive_player_pieces_around_queen - active_player_pieces_around_queen)
             * self.piece_around_queen_value
             + active_player_available_moves * self.available_move_value

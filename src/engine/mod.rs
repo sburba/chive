@@ -8,4 +8,6 @@ mod pathfinding;
 pub mod row_col;
 pub mod save_game;
 mod zobrist;
+
+#[cfg(test)]
 mod canonicalizer;
