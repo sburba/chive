@@ -635,7 +635,7 @@ impl Game {
 
     fn spider_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         if self.immobilized_piece == Some(*from) {
-            return Either::Left(std::iter::empty());
+            return Either::Left(iter::empty());
         }
         let mut paths: Vec<Vec<Hex>> = vec![vec![*from]];
         let mut new_paths: Vec<Vec<Hex>> = vec![];
