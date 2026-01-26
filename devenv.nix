@@ -7,7 +7,7 @@
 {
   packages = [
     pkgs.clang
-    pkgs.mold
+    pkgs.lld
   ];
 
   # https://devenv.sh/languages/
