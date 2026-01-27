@@ -1,7 +1,7 @@
 use crate::engine::bug::Bug;
 use crate::engine::game::Turn::{Move, Placement};
 use crate::engine::hex::{Hex, is_adjacent, neighbors};
-use crate::engine::hive::{Color, Hive, Tile};
+use crate::engine::hive::{Color, Hive, HiveParseError, Tile};
 use crate::engine::pathfinding::move_would_break_hive;
 use crate::engine::zobrist::{ZobristHash, ZobristTable};
 use Turn::Skip;
@@ -9,6 +9,8 @@ use itertools::{Either, Itertools};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::max;
 use std::iter;
+use thiserror::Error;
+use crate::engine::parse::{parse_hex_map_string, HexMapParseError};
 
 #[derive(Clone)]
 pub struct Game {
@@ -81,10 +83,24 @@ impl Default for Game {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum GameParseError {
+    #[error("Invalid hex map string")]
+    InvalidMap(#[from] HexMapParseError),
+    #[error("Invalid hive configuration")]
+    InvalidHive(#[from] HiveParseError),
+}
+
 impl Game {
     pub fn turn_is_valid(&self, turn: Turn) -> bool {
         //TODO: This is a really slow way to implement this
         self.turns().contains(&turn)
+    }
+
+    pub fn from_map_str(map: &str) -> Result<Game, GameParseError> {
+        let hex_map = parse_hex_map_string(map)?;
+        let hive = Hive::from_hex_map(&hex_map)?;
+        Ok(Self::from_hive(hive, Color::White))
     }
 
     pub fn from_hive(hive: Hive, active_player: Color) -> Game {
