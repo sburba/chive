@@ -413,7 +413,7 @@ impl Game {
         // The Pillbug moves one space at a time, but it also has a special ability it may use
         // instead of moving.
         // The special ability allows the Pillbug to move an adjacent piece (friend or enemy) up to
-        // two spaces; up onto itself adn then down into another empty space adjacent to itself.
+        // two spaces; up onto itself and then down into another empty space adjacent to itself.
         //
         // Exceptions:
         //  * The Pillbug may not move the piece which was just moved by the other player
@@ -428,7 +428,7 @@ impl Game {
         //  the Pillbug is immobile.
 
         let direct_moves = if self.immobilized_piece == Some(*pillbug_hex) {
-            Either::Left(std::iter::empty())
+            Either::Left(iter::empty())
         } else {
             Either::Right(self.queen_moves(pillbug_hex))
         };
@@ -508,7 +508,7 @@ impl Game {
 
     fn queen_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         if self.immobilized_piece == Some(*from) {
-            return Either::Left(std::iter::empty());
+            return Either::Left(iter::empty());
         }
 
         Either::Right(
@@ -524,7 +524,7 @@ impl Game {
 
     fn beetle_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         if self.immobilized_piece == Some(*from) {
-            return Either::Left(std::iter::empty());
+            return Either::Left(iter::empty());
         }
 
         Either::Right(
@@ -563,7 +563,7 @@ impl Game {
 
     fn ladybug_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         if self.immobilized_piece == Some(*from) {
-            return Either::Left(std::iter::empty());
+            return Either::Left(iter::empty());
         }
 
         let mut paths: Vec<Vec<Hex>> = vec![vec![*from]];
@@ -685,7 +685,7 @@ impl Game {
 
     fn ant_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
         if self.immobilized_piece == Some(*from) {
-            return Either::Left(std::iter::empty());
+            return Either::Left(iter::empty());
         }
 
         let mut current = *from;
