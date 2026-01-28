@@ -2,6 +2,7 @@ use crate::engine::bug::Bug;
 use crate::engine::game::Turn::{Move, Placement};
 use crate::engine::hex::{Hex, is_adjacent, neighbors};
 use crate::engine::hive::{Color, Hive, HiveParseError, Tile};
+use crate::engine::parse::{HexMapParseError, parse_hex_map_string};
 use crate::engine::pathfinding::move_would_break_hive;
 use crate::engine::zobrist::{ZobristHash, ZobristTable};
 use Turn::Skip;
@@ -10,7 +11,6 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::max;
 use std::iter;
 use thiserror::Error;
-use crate::engine::parse::{parse_hex_map_string, HexMapParseError};
 
 #[derive(Clone)]
 pub struct Game {
@@ -503,6 +503,12 @@ impl Game {
     }
 
     fn grasshopper_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
+        // Grasshopper either cannot move at all or can make all moves, so just check for hive
+        // breakage once at the start
+        if move_would_break_hive(&self.hive, from, &Hex{h: 100, ..*from}) {
+            return Either::Left(iter::empty())
+        }
+
         let mut allowed_jumps = vec![];
         let occupied_neighbors = self.hive.occupied_neighbors_at_same_level(from);
         for neighbor in occupied_neighbors {
@@ -512,14 +518,13 @@ impl Game {
                 .next_unoccupied_spot_in_direction(from, &direction);
             allowed_jumps.push(unoccupied_spot);
         }
-        allowed_jumps
+        Either::Right(allowed_jumps
             .into_iter()
-            .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
             .map(|to| Move {
                 from: *from,
                 to,
                 freezes_piece: false,
-            })
+            }))
     }
 
     fn queen_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
@@ -1570,9 +1575,9 @@ mod tests {
         //  _  q  .
         // .  P  p
         game = game.with_turn_applied(Move {
-            from: Hex { q: 0, r: 1, h: 0},
-            to: Hex { q: 1, r: 2, h: 0},
-            freezes_piece: true
+            from: Hex { q: 0, r: 1, h: 0 },
+            to: Hex { q: 1, r: 2, h: 0 },
+            freezes_piece: true,
         });
 
         // Use black pillbug to move white pillbug, even though the black pillbug is frozen
@@ -1580,8 +1585,8 @@ mod tests {
         //  .  q  P
         // .  _  p
         assert!(game.turn_is_valid(Move {
-            from: Hex {q: 0, r: 2, h: 0},
-            to: Hex {q: 2, r: 1, h: 0},
+            from: Hex { q: 0, r: 2, h: 0 },
+            to: Hex { q: 2, r: 1, h: 0 },
             freezes_piece: true
         }))
     }
