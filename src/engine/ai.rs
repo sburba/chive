@@ -42,7 +42,7 @@ impl Ai {
             Ok(turn)
         } else {
             self.strategy
-                .set_timeout(self.default_pondering_time - self.max_pondering_time);
+                .set_timeout(self.max_pondering_time - self.default_pondering_time);
             self.strategy.choose_move(game).ok_or(RanOutOfTime)
         }
     }
