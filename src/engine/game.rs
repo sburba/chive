@@ -774,7 +774,7 @@ impl Game {
         assert_eq!(from.h, to.h, "Slides must stay at the same height");
 
         // To test if a slide is allowed, we need to check if the two adjacent tiles to the slide
-        // are blocking the slide for example in this board:
+        // are blocking the slide. For example in this board:
         // .  .  1
         //  .  Q  d
         // .  .  2
@@ -806,24 +806,36 @@ impl Game {
         let neighbors: Vec<Hex> = self.hive.neighbors_at_same_level(hex).collect();
 
         let mut empty_seen = 0;
-        let mut allowed_slides: FxHashSet<Hex> = FxHashSet::default();
+        let mut allowed_slides: Vec<Hex> = vec![];
+        let mut previous_added = false;
+
         for (i, hex) in neighbors.iter().enumerate() {
             if self.hive.is_occupied(hex) && Some(hex) != ignore_hex {
                 empty_seen = 0;
             } else {
                 if empty_seen > 0 {
-                    allowed_slides.insert(*hex);
-                    allowed_slides.insert(neighbors[i - 1]);
+                    allowed_slides.push(*hex);
+                    if !previous_added {
+                        allowed_slides.push(neighbors[i - 1]);
+                    }
+                    previous_added = true;
+                } else {
+                    previous_added = false;
                 }
                 empty_seen += 1;
             }
         }
 
-        let first = neighbors.first().unwrap();
-        let last = neighbors.last().unwrap();
-        if !self.hive.is_occupied(first) && !self.hive.is_occupied(last) {
-            allowed_slides.insert(*first);
-            allowed_slides.insert(*last);
+        let first = &neighbors[0];
+        let second = &neighbors[1];
+        let last = &neighbors[5];
+        if !self.hive.is_occupied(first) && !self.hive.is_occupied(&last) {
+            if !previous_added {
+                allowed_slides.push(*last);
+            }
+            if self.hive.is_occupied(second) {
+                allowed_slides.push(*first);
+            }
         }
 
         allowed_slides.into_iter()
@@ -1119,6 +1131,17 @@ mod tests {
             r#"
             .  *  a
              *  Q  a
+            .  b  b
+        "#,
+        );
+    }
+
+    #[test]
+    fn test_queen_move_can_escape_semicircle_in_top() {
+        assert_moves(
+            r#"
+            .  *  *
+             a  Q  a
             .  b  b
         "#,
         );
