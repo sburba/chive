@@ -15,6 +15,7 @@ humantime = "2.3.0"
 clap = { version = "4.5.51", features = ["derive"] }
 
 [dev-dependencies]
+criterion = "0.8.1"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
 
@@ -32,3 +33,7 @@ debug = true
 [profile.release]
 codegen-units = 1
 lto = "thin"
+
+[[bench]]
+name = "generate_turns"
+harness = false
