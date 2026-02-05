@@ -20,7 +20,7 @@ fn main() {
     let mut ai = Ai::new(pondering_time, pondering_time * 3);
     let mut game = start;
     while let Ok(turn) = ai.choose_turn(&game) {
-        game = game.with_turn_applied(turn);
+        game.apply_turn(turn);
         println!("{}", game.hive);
     }
     println!("{}", game.hive);

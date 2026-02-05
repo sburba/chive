@@ -3,12 +3,13 @@ use crate::engine::game::Turn::{Move, Placement};
 use crate::engine::hex::{Hex, is_adjacent, neighbors};
 use crate::engine::hive::{Color, Hive, HiveParseError, Tile};
 use crate::engine::parse::{HexMapParseError, parse_hex_map_string};
-use crate::engine::pathfinding::move_would_break_hive;
+use crate::engine::pathfinding::articulation_points;
 use crate::engine::zobrist::{ZobristHash, ZobristTable};
 use Turn::Skip;
 use itertools::{Either, Itertools};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cmp::max;
+use std::collections::VecDeque;
 use std::iter;
 use thiserror::Error;
 
@@ -20,8 +21,10 @@ pub struct Game {
     pub white_reserve: Vec<Bug>,
     pub black_reserve: Vec<Bug>,
     pub active_player: Color,
-    pub immobilized_piece: Option<Hex>,
-    pub last_turn: Option<Turn>,
+    // Precalculation of pieces that cannot move because they would break the One Hive Rule
+    pinned_hexes: FxHashSet<Hex>,
+    pub turn_history: VecDeque<Turn>,
+    max_turn_history: usize,
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy, Ord, PartialOrd, Hash)]
@@ -69,16 +72,15 @@ fn default_reserve() -> Vec<Bug> {
 impl Default for Game {
     fn default() -> Self {
         Game {
-            hive: Hive {
-                map: Default::default(),
-            },
+            hive: Hive::default(),
             white_reserve: default_reserve(),
             black_reserve: default_reserve(),
             active_player: Color::White,
-            last_turn: None,
-            immobilized_piece: None,
             zobrist_table: ZobristTable::get(),
             zobrist_hash: Default::default(),
+            pinned_hexes: FxHashSet::default(),
+            turn_history: VecDeque::with_capacity(3),
+            max_turn_history: 2,
         }
     }
 }
@@ -127,125 +129,120 @@ impl Game {
     ) -> Game {
         let zobrist_table = ZobristTable::get();
         let zobrist_hash = zobrist_table.hash(&hive, active_player);
+        let pinned_hexes = articulation_points(&hive);
         Game {
             hive,
             white_reserve,
             black_reserve,
-            last_turn: None,
-            immobilized_piece: None,
             zobrist_table,
             zobrist_hash,
             active_player,
+            pinned_hexes,
+            turn_history: VecDeque::with_capacity(3),
+            max_turn_history: 2,
         }
     }
 
-    pub fn with_turn_applied(&self, turn: Turn) -> Game {
-        let mut new_map = self.hive.map.clone();
+    pub fn apply_turn(&mut self, turn: Turn) {
         match turn {
             Placement { tile, hex } => {
-                let mut new_reserve = self.active_reserve().clone();
-                if tile.color != self.active_player {
-                    panic!(
-                        "Cannot apply {turn:?}, {} is not the active player",
-                        tile.color
-                    )
-                }
+                assert_eq!(
+                    tile.color, self.active_player,
+                    "Cannot apply {turn:?}, {} is not the active player",
+                    tile.color
+                );
 
-                let bug_index = self
-                    .active_reserve()
+                let active_reserve = self.active_reserve_mut();
+                let bug_index = active_reserve
                     .iter()
-                    .position(|bug| bug == &tile.bug);
-                match bug_index {
-                    None => {
-                        panic!()
-                    }
-                    Some(index) => {
-                        new_reserve.remove(index);
-                    }
-                }
+                    .position(|bug| bug == &tile.bug)
+                    .unwrap();
+                active_reserve.swap_remove(bug_index);
 
-                if self.hive.is_occupied(&hex) {
-                    panic!()
-                }
+                assert!(
+                    !self.hive.is_occupied(&hex),
+                    "Cannot place a tile at {:?}",
+                    hex
+                );
 
-                let white_reserve;
-                let black_reserve;
+                self.hive.map.insert(hex, tile);
+                self.zobrist_hash =
+                    self.zobrist_hash
+                        .with_added_tile(self.zobrist_table, &hex, &tile);
 
-                if self.active_player == Color::White {
-                    white_reserve = new_reserve;
-                    black_reserve = self.black_reserve.clone();
-                } else {
-                    white_reserve = self.white_reserve.clone();
-                    black_reserve = new_reserve;
-                }
-
-                new_map.insert(hex, tile);
-                let new_zobrist_hash = self
-                    .zobrist_hash
-                    .with_added_tile(self.zobrist_table, &hex, &tile)
-                    .with_turn_change(self.zobrist_table);
-
-                Game {
-                    hive: Hive { map: new_map },
-                    white_reserve,
-                    black_reserve,
-                    immobilized_piece: None,
-                    last_turn: Some(turn),
-                    active_player: self.active_player.opposite(),
-                    zobrist_table: self.zobrist_table,
-                    zobrist_hash: new_zobrist_hash,
-                }
+                self.pinned_hexes = articulation_points(&self.hive);
             }
             Move {
                 from,
                 to,
                 freezes_piece,
             } => {
-                debug_assert!(
+                assert!(
                     self.hive.is_occupied(&from),
                     "There isn't a piece at {:?}",
                     from
                 );
-                debug_assert!(!self.hive.is_occupied(&to), "There is a piece at {:?}", to);
+                assert!(!self.hive.is_occupied(&to), "There is a piece at {:?}", to);
 
-                let tile = new_map.remove(&from).unwrap();
-                debug_assert!(
+                let tile = self.hive.map.remove(&from).unwrap();
+                assert!(
                     tile.color == self.active_player || freezes_piece,
                     "Only the pillbug can move a piece of the opposing player, and that should freeze the piece"
                 );
+                self.hive.map.insert(to, tile);
 
-                new_map.insert(to, tile);
-                let new_zobrist_hash = self
+                self.zobrist_hash = self
                     .zobrist_hash
                     .with_removed_tile(self.zobrist_table, &from, &tile)
-                    .with_added_tile(self.zobrist_table, &to, &tile)
-                    .with_turn_change(self.zobrist_table);
+                    .with_added_tile(self.zobrist_table, &to, &tile);
 
-                Game {
-                    hive: Hive { map: new_map },
-                    white_reserve: self.white_reserve.clone(),
-                    black_reserve: self.black_reserve.clone(),
-                    last_turn: Some(turn),
-                    immobilized_piece: if freezes_piece { Some(to) } else { None },
-                    active_player: self.active_player.opposite(),
-                    zobrist_table: self.zobrist_table,
-                    zobrist_hash: new_zobrist_hash,
-                }
+                self.pinned_hexes = articulation_points(&self.hive);
             }
-            Skip => {
-                let new_zobrist_hash = self.zobrist_hash ^ self.zobrist_table.black_to_move;
-                Game {
-                    hive: self.hive.clone(),
-                    white_reserve: self.white_reserve.clone(),
-                    black_reserve: self.black_reserve.clone(),
-                    last_turn: Some(turn),
-                    immobilized_piece: None,
-                    active_player: self.active_player.opposite(),
-                    zobrist_table: self.zobrist_table,
-                    zobrist_hash: new_zobrist_hash,
-                }
-            }
+            Skip => {}
         }
+        self.turn_history.push_front(turn);
+        self.turn_history.truncate(self.max_turn_history);
+
+        self.zobrist_hash = self.zobrist_hash.with_turn_change(self.zobrist_table);
+        self.active_player = self.active_player.opposite();
+    }
+
+    pub fn undo_turn(&mut self, turn: Turn) {
+        self.active_player = self.active_player.opposite();
+        self.zobrist_hash = self.zobrist_hash.with_turn_change(self.zobrist_table);
+
+        match turn {
+            Placement { tile, hex } => {
+                self.hive.map.remove(&hex);
+
+                self.zobrist_hash =
+                    self.zobrist_hash
+                        .with_removed_tile(self.zobrist_table, &hex, &tile);
+                self.active_reserve_mut().push(tile.bug);
+                self.pinned_hexes = articulation_points(&self.hive);
+            }
+            Move {
+                from,
+                to,
+                freezes_piece: _,
+            } => {
+                // Move the tile back from 'to' to 'from'
+                let tile = self.hive.map.remove(&to).unwrap_or_else(|| {
+                    panic!("Cannot undo move {turn:?} because no tile exists at '{to:?}'")
+                });
+                self.hive.map.insert(from, tile);
+
+                self.zobrist_hash = self
+                    .zobrist_hash
+                    .with_removed_tile(self.zobrist_table, &to, &tile)
+                    .with_added_tile(self.zobrist_table, &from, &tile);
+
+                self.pinned_hexes = articulation_points(&self.hive);
+            }
+            Skip => {}
+        }
+
+        self.turn_history.pop_front();
     }
 
     pub fn game_result(&self) -> GameResult {
@@ -275,6 +272,13 @@ impl Game {
         match self.active_player {
             Color::Black => &self.black_reserve,
             Color::White => &self.white_reserve,
+        }
+    }
+
+    fn active_reserve_mut(&mut self) -> &mut Vec<Bug> {
+        match self.active_player {
+            Color::Black => &mut self.black_reserve,
+            Color::White => &mut self.white_reserve,
         }
     }
 
@@ -397,7 +401,7 @@ impl Game {
             self.hive
                 .toplevel_pieces()
                 .filter(|(_, tile)| tile.color == self.active_player)
-                .flat_map(|(hex, tile)| self.moves_for_tile(tile.bug, hex)),
+                .flat_map(move |(hex, tile)| self.moves_for_tile(tile.bug, hex)),
         )
     }
 
@@ -410,6 +414,20 @@ impl Game {
 
         let tile = self.hive.tile_at(hex).unwrap();
         Either::Right(self.moves_for_tile(tile.bug, hex))
+    }
+
+    fn is_immobilized(&self, hex: &Hex) -> bool {
+        // A piece can be immobilized for one of two reasons:
+
+        // 1. It is frozen because the pillbug moved it here on the last turn
+        let last_turn = self.turn_history.get(0);
+        let piece_is_frozen =
+            matches!(last_turn, Some(Move {to, freezes_piece: true, ..}) if to == hex);
+
+        // 2. It is pinned and moving it would therefore break the one-hive rule.
+        let piece_is_pinned = self.pinned_hexes.contains(hex);
+
+        piece_is_frozen || piece_is_pinned
     }
 
     fn moves_for_tile<'a>(&'a self, bug: Bug, hex: &'a Hex) -> Box<dyn Iterator<Item = Turn> + 'a> {
@@ -425,7 +443,7 @@ impl Game {
         }
     }
 
-    fn pillbug_moves(&self, pillbug_hex: &Hex) -> impl Iterator<Item = Turn> {
+    fn pillbug_moves<'a>(&'a self, pillbug_hex: &'a Hex) -> impl Iterator<Item = Turn> + 'a {
         // The Pillbug moves one space at a time, but it also has a special ability it may use
         // instead of moving.
         // The special ability allows the Pillbug to move an adjacent piece (friend or enemy) up to
@@ -443,11 +461,7 @@ impl Game {
         //  The Mosquito can mimic either the movement or special ability of the Pillbug, even when
         //  the Pillbug is immobile.
 
-        let direct_moves = if self.immobilized_piece == Some(*pillbug_hex) {
-            Either::Left(iter::empty())
-        } else {
-            Either::Right(self.queen_moves(pillbug_hex))
-        };
+        let direct_moves = self.queen_moves(pillbug_hex);
 
         let mut special_ability_moves: Vec<Turn> = vec![];
         let free_spaces: Vec<_> = self.hive.unoccupied_neighbors(&pillbug_hex).collect();
@@ -455,29 +469,28 @@ impl Game {
             h: 1,
             ..*pillbug_hex
         };
-        let piece_moved_last_turn = match self.last_turn {
+        let piece_moved_last_turn = match self.turn_history.get(0) {
             Some(Move { to, .. }) => Some(to),
             _ => None,
         };
 
         for neighbor in self.hive.topmost_occupied_neighbors(pillbug_hex) {
-            // Cannot move a piece that is in a stack
+            // Cannot move a piece in a stack
             if neighbor.h != 0 {
                 continue;
             }
+
             // Cannot move a piece that just moved
-            if Some(neighbor) == piece_moved_last_turn {
+            if Some(&neighbor) == piece_moved_last_turn {
+                continue;
+            }
+
+            if self.is_immobilized(&neighbor) {
                 continue;
             }
 
             // Verify that the move onto the pillbug is not blocked
             if !self.slide_is_allowed(&Hex { h: 1, ..neighbor }, &above_pillbug) {
-                continue;
-            }
-
-            // The only move that could break the hive is the move up onto the pillbug, so we
-            // only check that one
-            if move_would_break_hive(&self.hive, &neighbor, &above_pillbug) {
                 continue;
             }
 
@@ -503,10 +516,8 @@ impl Game {
     }
 
     fn grasshopper_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
-        // Grasshopper either cannot move at all or can make all moves, so just check for hive
-        // breakage once at the start
-        if move_would_break_hive(&self.hive, from, &Hex{h: 100, ..*from}) {
-            return Either::Left(iter::empty())
+        if self.is_immobilized(from) {
+            return Either::Left(iter::empty());
         }
 
         let mut allowed_jumps = vec![];
@@ -518,33 +529,28 @@ impl Game {
                 .next_unoccupied_spot_in_direction(from, &direction);
             allowed_jumps.push(unoccupied_spot);
         }
-        Either::Right(allowed_jumps
-            .into_iter()
-            .map(|to| Move {
-                from: *from,
-                to,
-                freezes_piece: false,
-            }))
+
+        Either::Right(allowed_jumps.into_iter().map(|to| Move {
+            from: *from,
+            to,
+            freezes_piece: false,
+        }))
     }
 
-    fn queen_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
-        if self.immobilized_piece == Some(*from) {
+    fn queen_moves<'a>(&'a self, from: &'a Hex) -> impl Iterator<Item = Turn> + 'a {
+        if self.is_immobilized(from) {
             return Either::Left(iter::empty());
         }
 
-        Either::Right(
-            self.allowed_slides(from, Some(from))
-                .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
-                .map(|to| Move {
-                    from: *from,
-                    to,
-                    freezes_piece: false,
-                }),
-        )
+        Either::Right(self.allowed_slides(from, Some(from)).map(|to| Move {
+            from: *from,
+            to,
+            freezes_piece: false,
+        }))
     }
 
     fn beetle_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
-        if self.immobilized_piece == Some(*from) {
+        if self.is_immobilized(from) {
             return Either::Left(iter::empty());
         }
 
@@ -573,7 +579,6 @@ impl Game {
                         None
                     }
                 })
-                .filter(|possible_move| !move_would_break_hive(&self.hive, from, possible_move))
                 .map(|to| Move {
                     from: *from,
                     to,
@@ -583,7 +588,7 @@ impl Game {
     }
 
     fn ladybug_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
-        if self.immobilized_piece == Some(*from) {
+        if self.is_immobilized(from) {
             return Either::Left(iter::empty());
         }
 
@@ -624,7 +629,6 @@ impl Game {
                                 dest,
                             )
                         })
-                        .filter(|dest| !(i == 1 && move_would_break_hive(&self.hive, from, dest)))
                         .collect()
                 };
 
@@ -655,14 +659,13 @@ impl Game {
     }
 
     fn spider_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
-        if self.immobilized_piece == Some(*from) {
+        if self.is_immobilized(from) {
             return Either::Left(iter::empty());
         }
         let mut paths: Vec<Vec<Hex>> = vec![vec![*from]];
         let mut new_paths: Vec<Vec<Hex>> = vec![];
 
-        for i in 1..=3 {
-            let first_move = i == 1;
+        for _ in 1..=3 {
             for path in paths.iter() {
                 let current = path.last().unwrap();
                 for dest in self.allowed_slides(current, Some(from)) {
@@ -671,10 +674,7 @@ impl Game {
                     }
                     // The spider can only break the hive on its first move as long as it is adjacent to
                     // something at each step. I think?!?!?!
-                    if first_move && move_would_break_hive(&self.hive, current, &dest)
-                        || !first_move
-                            && self.slide_would_separate_self_from_hive(current, &dest, from)
-                    {
+                    if self.slide_would_separate_self_from_hive(current, &dest, from) {
                         continue;
                     }
 
@@ -705,7 +705,7 @@ impl Game {
     }
 
     fn ant_moves(&self, from: &Hex) -> impl Iterator<Item = Turn> {
-        if self.immobilized_piece == Some(*from) {
+        if self.is_immobilized(from) {
             return Either::Left(iter::empty());
         }
 
@@ -714,7 +714,6 @@ impl Game {
         let mut frontier: Vec<Hex> = vec![];
         frontier.push(current);
 
-        let mut first_move = true;
         while !frontier.is_empty() {
             current = frontier.pop().unwrap();
             for dest in self.allowed_slides(&current, Some(from)) {
@@ -723,16 +722,12 @@ impl Game {
                 }
                 // The ant can only break the hive on its first move as long as it is adjacent to
                 // something at each step. I think?!?!?!
-                if first_move && move_would_break_hive(&self.hive, &current, &dest)
-                    || !first_move
-                        && self.slide_would_separate_self_from_hive(&current, &dest, from)
-                {
+                if self.slide_would_separate_self_from_hive(&current, &dest, from) {
                     continue;
                 }
                 allowed_moves.insert(dest);
                 frontier.push(dest);
             }
-            first_move = false;
         }
 
         Either::Right(allowed_moves.into_iter().map(|to| Move {
@@ -743,16 +738,12 @@ impl Game {
     }
 
     fn mosquito_moves(&self, start: &Hex) -> impl Iterator<Item = Turn> {
-        let immobilized = self.immobilized_piece == Some(*start);
-
         let adjacent_bugs: Vec<_> = self
             .hive
             .topmost_occupied_neighbors(start)
             .map(|hex| self.hive.map.get(&hex).unwrap().bug)
             // Not allowed to copy other mosquitos
             .filter(|bug| *bug != Bug::Mosquito)
-            // If immobilized, can only copy the pillbug push moves
-            .filter(|bug| !immobilized || *bug == Bug::Pillbug)
             .collect();
 
         let mut turns: FxHashSet<Turn> = FxHashSet::default();
@@ -764,6 +755,12 @@ impl Game {
     }
 
     fn slide_would_separate_self_from_hive(&self, from: &Hex, to: &Hex, ignore_hex: &Hex) -> bool {
+        // A move from any level but the bottom cannot separate self from hive, because there is a
+        // piece underneath
+        if from.h != 0 {
+            return false;
+        }
+
         !self
             .hive
             .occupied_neighbors_at_same_level(from)
@@ -794,16 +791,19 @@ impl Game {
                 h: 0,
             };
 
-        !self.hive.is_occupied(&clockwise_neighbor)
-            || !self.hive.is_occupied(&counter_clockwise_neighbor)
+        let follows_one_hive_rule = !self.slide_would_separate_self_from_hive(from, to, from);
+        let follows_freedom_to_move_rule = !self.hive.is_occupied(&clockwise_neighbor)
+            || !self.hive.is_occupied(&counter_clockwise_neighbor);
+
+        follows_one_hive_rule && follows_freedom_to_move_rule
     }
 
-    fn allowed_slides(
-        &self,
-        hex: &Hex,
+    fn allowed_slides<'a>(
+        &'a self,
+        from: &'a Hex,
         ignore_hex: Option<&Hex>,
-    ) -> impl Iterator<Item = Hex> + use<> {
-        let neighbors: Vec<Hex> = self.hive.neighbors_at_same_level(hex).collect();
+    ) -> impl Iterator<Item = Hex> + 'a {
+        let neighbors: Vec<Hex> = self.hive.neighbors_at_same_level(from).collect();
 
         let mut empty_seen = 0;
         let mut allowed_slides: Vec<Hex> = vec![];
@@ -838,7 +838,9 @@ impl Game {
             }
         }
 
-        allowed_slides.into_iter()
+        allowed_slides
+            .into_iter()
+            .filter(move |to| !self.slide_would_separate_self_from_hive(from, to, &from))
     }
 
     fn is_adjacent_to_color(&self, hex: &Hex, color: &Color) -> bool {
@@ -1471,6 +1473,17 @@ mod tests {
     }
 
     #[test]
+    fn test_pillbug_cannot_move_pinned_piece() {
+        assert_pillbug_pushes(
+            r#"
+            .  .  .  .
+             .  P  &  a
+            .  .  .  .
+            "#,
+        );
+    }
+
+    #[test]
     fn test_pillbug_can_slide() {
         assert_moves(
             r#"
@@ -1530,7 +1543,7 @@ mod tests {
         // .  .  .
         //  _  Q  .
         // .  q  P
-        game = game.with_turn_applied(Move {
+        game.apply_turn(Move {
             from: Hex { q: 0, r: 1, h: 0 },
             to: Hex { q: 0, r: 2, h: 0 },
             freezes_piece: false,
@@ -1539,12 +1552,14 @@ mod tests {
         // Find all the moves that move the black queen (at q: 0, r: 2)
         let moves = game
             .pillbug_moves(&Hex { q: 1, r: 2, h: 0 })
-            .filter(|turn| match turn {
-                Move {
-                    from: Hex { q: 0, r: 2, h: 0 },
-                    ..
-                } => true,
-                _ => false,
+            .filter(|turn| {
+                matches!(
+                    turn,
+                    Move {
+                        from: Hex { q: 0, r: 2, h: 0 },
+                        ..
+                    }
+                )
             });
 
         // There shouldn't be any
@@ -1569,7 +1584,7 @@ mod tests {
         // .  .  q
         //  .  P  .
         // .  _  Q
-        game = game.with_turn_applied(Move {
+        game.apply_turn(Move {
             from: Hex { q: 0, r: 2, h: 0 },
             to: Hex { q: 2, r: 0, h: 0 },
             freezes_piece: true,
@@ -1597,7 +1612,7 @@ mod tests {
         // .  Q  .
         //  _  q  .
         // .  P  p
-        game = game.with_turn_applied(Move {
+        game.apply_turn(Move {
             from: Hex { q: 0, r: 1, h: 0 },
             to: Hex { q: 1, r: 2, h: 0 },
             freezes_piece: true,
@@ -1612,6 +1627,21 @@ mod tests {
             to: Hex { q: 2, r: 1, h: 0 },
             freezes_piece: true
         }))
+    }
+
+    #[test]
+    fn test_a_thing() {
+        let map = r#"
+          .  A  .  .
+         .  .  a  m
+          q  a  .  .
+         .  .  A  M
+          .  .  Q  .
+        "#;
+
+        let game = Game::from_map_str(map).unwrap();
+        let turns = game.turns();
+        assert!(turns.count() > 0)
     }
 
     #[test]
@@ -1632,7 +1662,7 @@ mod tests {
         // .  _  .
         //  p  q  Q
         // .  P  M
-        game = game.with_turn_applied(Move {
+        game.apply_turn(Move {
             from: Hex { q: 1, r: 0, h: 0 },
             to: Hex { q: 0, r: 2, h: 0 },
             freezes_piece: true,

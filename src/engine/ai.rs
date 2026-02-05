@@ -58,8 +58,13 @@ impl minimax::Game for HiveGame {
         moves.extend(state.turns())
     }
 
-    fn apply(state: &mut Self::S, m: Self::M) -> Option<Self::S> {
-        Some(state.with_turn_applied(m))
+    fn apply(state: &mut Self::S, turn: Self::M) -> Option<Self::S> {
+        state.apply_turn(turn);
+        None
+    }
+
+    fn undo(state: &mut Self::S, turn: Self::M) {
+        state.undo_turn(turn)
     }
 
     fn get_winner(state: &Self::S) -> Option<Winner> {

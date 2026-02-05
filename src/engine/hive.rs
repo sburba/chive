@@ -43,7 +43,7 @@ impl Display for Tile {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Hive {
     pub map: FxHashMap<Hex, Tile>,
 }

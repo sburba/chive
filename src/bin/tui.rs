@@ -230,7 +230,7 @@ impl App {
                     };
 
                     if self.game.turn_is_valid(turn) {
-                        self.game = self.game.with_turn_applied(turn);
+                        self.game.apply_turn(turn);
                         self.selection = SelectionState::None;
                     }
                 }
@@ -245,7 +245,7 @@ impl App {
                         freezes_piece: true,
                     };
                     if self.game.turn_is_valid(turn) {
-                        self.game = self.game.with_turn_applied(turn);
+                        self.game.apply_turn(turn);
                         self.selection = SelectionState::None;
                     }
                 }
@@ -267,7 +267,7 @@ impl App {
                 },
             };
             if self.game.turn_is_valid(turn) {
-                self.game = self.game.with_turn_applied(turn);
+                self.game.apply_turn(turn);
             }
         }
     }
@@ -275,7 +275,7 @@ impl App {
     fn make_ai_move(&mut self) -> Result<(), AppError> {
         let turn = self.ai.choose_turn(&self.game)?;
         self.last_ai_move_pos = self.last_affected_row_col(&turn);
-        self.game = self.game.with_turn_applied(turn);
+        self.game.apply_turn(turn);
         Ok(())
     }
 

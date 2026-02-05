@@ -8,6 +8,7 @@
   packages = [
     pkgs.clang
     pkgs.lld
+    pkgs.valgrind
   ];
 
   # https://devenv.sh/languages/
